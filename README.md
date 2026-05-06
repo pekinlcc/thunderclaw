@@ -59,7 +59,28 @@ Both have to be installed.
    cd thunderclaw
    ```
 
-### Linux
+### Linux — recommended: `.deb` (one command, zero clicks in Thunderbird)
+
+Download `thunderclaw_x.y.z_all.deb` from [Releases](https://github.com/pekinlcc/thunderclaw/releases) and install:
+
+```bash
+sudo apt install ./thunderclaw_x.y.z_all.deb
+# or:
+sudo dpkg -i thunderclaw_x.y.z_all.deb && sudo apt-get install -f
+```
+
+The package handles **everything**:
+
+- Native messaging host → `/usr/lib/thunderclaw/` + `/usr/lib/mozilla/native-messaging-hosts/thunderclaw.json`
+- Extension XPI → `/opt/thunderclaw/thunderclaw.xpi`
+- Auto-installs the XPI into all Thunderbird profiles via `/etc/thunderbird/policies.json` (Mozilla Enterprise Policy mechanism — bypasses signature check on local files)
+- Merges cleanly with existing policies if you already have any
+
+After install, just restart Thunderbird — the **AI 助手** space appears in the spaces toolbar. No clicking through Add-ons dialogs.
+
+To remove: `sudo apt remove thunderclaw` (the postrm script also prunes our entry from `/etc/thunderbird/policies.json` cleanly).
+
+### Linux — manual (no .deb)
 
 ```bash
 # 1. Install the native messaging host
