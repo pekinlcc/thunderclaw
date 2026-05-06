@@ -36,11 +36,12 @@ Thunderbird XPI 扩展，新增 "AI 视图" 标签页，由用户本地已登录
   - 标题、摘要
   - 优先级（高 / 中 / 低）
   - 截止时间（如有）
-  - 建议处置：
-    - 通知类 → "我已知晓" 按钮
-    - 需回复 → 建议回复正文 + 建议原因
-  - 关联的原邮件列表（点击可看）
+  - actionType：`reply` / `acknowledge` / `none`
+  - **suggestedActions**：当 actionType=`reply` 时，2–4 个候选**自然语言动作**（不是完整回复正文），覆盖不同合理处理方向（确认 / 婉拒 / 反问 / 推迟 等）；其它情况为空数组
+  - AI 判断依据（reason）
+  - 关联的原邮件 ID 列表（点击可展开预览 / 跳到 TB 邮件视图）
 - 没有重要事项的联系人：不出卡片
+- **关键决策**：Pulse 阶段不预生成完整回复正文，避免给从不打开的卡片烧 token。完整正文由 Writer agent (§1.4) 在用户点动作时按需生成。
 
 ### 1.3 Briefing（Agent b · 全局汇总）
 
@@ -50,6 +51,20 @@ Thunderbird XPI 扩展，新增 "AI 视图" 标签页，由用户本地已登录
 - 全局排优先级
 - 输出最终的 "今日简报"，是 AI 视图主屏显示的内容
 - 卡片结构与 ContactPulse 一致
+
+### 1.4 Writer（按需触发的回复生成 agent）
+
+用户在简报卡上点了某个 suggestedAction 按钮 → 触发独立的 LLM 调用生成实际回复正文：
+
+- **输入**：item 上下文（联系人 / 标题 / 关联邮件正文）+ 用户选中的 action label + 用户自我介绍
+- **输出**：纯文本回复正文（无 Subject、无 markdown 围栏）
+- 生成完成后内联展开在卡片底部，配三个按钮：**在撰写窗口打开** / **复制** / **重新生成**
+- 用户切到下一张卡时生成态自动清空，不持久化
+
+**为什么分两个 agent 而不是 Pulse 一次出完整回复**：
+- 用户大部分卡只是 ack 一下，从不打开回复；Pulse 一次生成 N 张卡的完整正文是浪费
+- 回复方向有多个（确认/婉拒/反问），按钮表达比单一文本表达更准
+- 语气调整（正式/友好/简短）直接编进 action label，不用单独一套 tone preset 重生成
 
 ### 1.4 重要性判定 Rubric
 
@@ -132,28 +147,39 @@ Mockup ③ 提供两个按钮：
 ### 4.1 关键 UI 元素
 
 - 优先级 pill：高 / 中 / 低
-- 建议回复区域包含语气切换：正式 / 友好 / 简短。**每次切换都重新调一次 LLM**（不预生成三份）
-- 主行动按钮：
-  - 需回复事项："在撰写窗口打开"（主） + "复制到剪贴板"（次）
-  - 通知类事项："我已知晓"（主）
-- 副按钮："查看 N 封原邮件"、"不重要 · 不再提示"
-- 联系人详情区有 "查看联系人主页" 入口
+- **"发生了什么" 区域**可点击展开：内联展示最近一封原邮件的 subject / from / date / body 预览（HTML 已脱皮成纯文本）+ "在 Thunderbird 中打开"按钮
+- **建议回应方式**（actionType=reply 时）：一排短按钮，每个按钮是一个**自然语言动作**（如"回复确认本周内提交"、"回复请求延期"、"回复反问具体格式"）。首选高亮蓝，其它白底
+  - 点击按钮 → 内联展开 Writer agent 生成的回复正文 + 三个按钮：**在撰写窗口打开** / **复制** / **重新生成**
+  - 切到下一张卡时生成态自动清空
+  - **不再有 "正式 / 友好 / 简短" 语气切换**——语气直接嵌入 action label，按需再加一个动作即可
+- 主行动按钮（卡片底部）：
+  - 通知类事项 (actionType=acknowledge / none)："我已知晓"（主）
+  - 需回复事项无 "我已知晓"（已经有上面的回复动作）
+- 副按钮："不重要 · 不再提示"
 - "AI 的判断依据" 始终展示，解释为什么这样推荐
 
-### 4.2 操作语义
+### 4.2 操作语义 + 反馈
 
-- **"我已知晓"**：该 item 立刻从 briefing 消失，记入持久化。该联系人再来新邮件触发新分析时，已处理过的 thread 不再产出 item，但全新的事项仍会出
+每个动作完成后，右下角弹一个 toast，3.5 秒自动消失，告知后台具体做了什么。
+
+- **"我已知晓"**：该 item 立刻消失，**同时把所有关联邮件 `messages.update({read:true})` + `messages.archive(...)`**（按 TB 归档策略，通常归到 Archives/年份）
+  - Toast：`✓ 已标为已读 · 归档 N 封` / 出错时 `⚠ 已标读 N 封，但归档失败：<原因>`
+  - 该联系人后续再来新邮件触发新分析时，已 ack 的 thread 不再产出 item，但全新事项仍会出
 - **"不重要 · 不再提示"**：对该联系人的该 thread **永久压制**（不是对整个联系人）
-- **"查看 N 封原邮件"**：打开 Thunderbird 标准邮件视图，过滤到该联系人 + 相关 thread
+  - Toast：`✓ 已压制此 thread · 不会再提示`
+- **"在 Thunderbird 中打开"**（在原邮件预览里）：调 `messageDisplay.open(messageId)`，跳到 TB 标准邮件视图
+- **"复制"**（生成的回复）：写入剪贴板。Toast：`✓ 已复制到剪贴板`
 
 ### 4.3 撰写窗口预填默认行为
 
-点击 "在撰写窗口打开" 时调用 `messenger.compose.beginReply()`：
-- 默认 **reply**（非 reply-all）；卡片上提供 "改用 reply-all" 切换
-- AI 生成的正文放在**引用原文之前**
+点击某个 suggestedAction → Writer 生成回复 → 用户检查 → 点击 **"在撰写窗口打开"** 时调 `messenger.compose.beginReply()`：
+
+- 默认 **reply**（非 reply-all）
+- Writer 生成的正文放在**引用原文之前**
 - **保留用户签名**（顺序：AI 正文 → 用户签名 → 引用原文）
-- **HTML / 纯文本跟随原邮件格式**
-- 多语言：AI 输出语言跟随原邮件，参考自我介绍中的偏好
+- **HTML / 纯文本跟随原邮件格式**（同时传 `body` HTML + `plainTextBody` 兼容）
+- beginReply 失败时兜底用 `compose.beginNew({to, subject, body})` 开新邮件
+- 永不自动发送，用户必须手动点撰写窗口里的发送
 
 ## 5. AI 后端
 
@@ -175,6 +201,19 @@ Mockup ③ 提供两个按钮：
 - 提供**一键安装器**：macOS `.pkg` / Windows `.msi` / Linux `.deb`
 - 安装器负责把 helper 二进制和 NativeMessagingHosts manifest 文件放到对应 OS 的标准位置
 - 扩展启动时检测 helper 可用性，未检测到则在 UI 引导用户下载安装
+
+**Linux .deb（已实现 v0.1.6）**：
+
+```
+/usr/lib/thunderclaw/                       native host runtime + wrapper
+/usr/lib/mozilla/native-messaging-hosts/    NMH manifest (system-wide, 所有 TB 都读)
+/opt/thunderclaw/thunderclaw.xpi            extension XPI
+/etc/thunderbird/policies.json              Mozilla Enterprise Policy 自动装 XPI
+```
+
+**关键技巧**：用 `policies.json` 的 `ExtensionSettings` + `installation_mode: normal_installed` 让 TB 自动把 XPI 装进所有 profile，**绕过未签名扩展的安装限制**。postinst 用 Python 做 JSON merge，不会覆盖用户已有的其它 policies。postrm 反向 prune。
+
+**macOS / Windows**：尚未实现（v0.2 计划），暂时仍走 `node scripts/install-native-host.mjs` + 手动拖 XPI 进 Add-ons 的两步法。
 
 ### 5.3 用户自我介绍
 
@@ -221,15 +260,25 @@ v1 **不**做跨设备同步、不做手动备份/导出。
 - **IMAP 临时断网**：用上一次 briefing 继续展示，状态栏标 "数据可能过期"
 - **单联系人邮件量过大（>200）**：截到最近 30 封；较早的只发 metadata（subject + date）
 
-## 8. 实施顺序
+## 8. 实施进度
 
-按以下顺序逐步推进，每步跑通后再下一步：
-
-1. `manifest.json` + 最小 MailExtension：能在 Thunderbird 里加 AI 视图标签页，先放静态内容
-2. Native Messaging Host：独立 Node 程序能 spawn `claude -p "hello"` 拿到结果，扩展通过 stdio 握手
-3. Roost 阶段：枚举本地邮件 + 联系人 + 日历，按联系人聚合，先不接 LLM，输出 JSON
-4. 接入 ContactPulse、Briefing 的 LLM 调用，串通整条流水线
-5. UI 落地（按 Mockup）
+- [x] `manifest.json` + 最小 MailExtension（v0.1.0）
+- [x] Native Messaging Host：独立 Node 程序，stdio 协议（v0.1.2）
+- [x] Roost 阶段：枚举邮件 + 联系人聚合（v0.1.2）
+- [x] ContactPulse + Briefing LLM 调用 + 流式输出（v0.1.2）
+- [x] UI 落地（CLI Picker / Intro / Loading / Briefing 双栏 / 空态）（v0.1.2）
+- [x] 撰写窗口预填（v0.1.2）
+- [x] 30 天扫描窗口 + body fetch 5s 超时（v0.1.3）
+- [x] "发生了什么" 可展开看原邮件 + 跳 TB 邮件视图（v0.1.4）
+- [x] "我已知晓" 自动标已读 + 归档（v0.1.4）
+- [x] Linux `.deb` 一键安装（v0.1.6）
+- [x] **Pulse 改输出 suggestedActions，新增 Writer agent 按需生成回复**（v0.1.7）
+- [x] 动作 toast 反馈（v0.1.8）
+- [ ] macOS `.pkg` / Windows `.msi` 安装器
+- [ ] 日历集成（API 在 TB 140 部分实验性）
+- [ ] Rubric 文件（AI 自维护的判定标准）
+- [ ] 设置面板（CLI 切换、清除数据、编辑自我介绍）
+- [ ] 新邮件触发增量分析
 
 ## 9. v1 明确不做
 
