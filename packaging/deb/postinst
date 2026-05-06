@@ -1,0 +1,73 @@
+#!/bin/sh
+# Post-install for thunderclaw .deb
+# - register the native messaging host manifest (already placed by dpkg)
+# - merge our entry into /etc/thunderbird/policies.json so TB auto-installs the XPI
+set -e
+
+XPI=/opt/thunderclaw/thunderclaw.xpi
+EXT_ID=thunderclaw@pekinlcc.dev
+POLICIES=/etc/thunderbird/policies.json
+
+if [ ! -f "$XPI" ]; then
+  echo "thunderclaw: XPI not found at $XPI" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$POLICIES")"
+
+# Merge or create policies.json. Uses Python (always present on Debian/Ubuntu).
+python3 - "$POLICIES" "$EXT_ID" "$XPI" <<'PY'
+import json
+import os
+import sys
+
+policies_path, ext_id, xpi_path = sys.argv[1], sys.argv[2], sys.argv[3]
+
+if os.path.exists(policies_path):
+    try:
+        with open(policies_path) as f:
+            data = json.load(f)
+    except Exception:
+        # corrupted, back up and start fresh
+        os.rename(policies_path, policies_path + '.tc-backup')
+        data = {}
+else:
+    data = {}
+
+data.setdefault('policies', {})
+ext_settings = data['policies'].setdefault('ExtensionSettings', {})
+ext_settings[ext_id] = {
+    'install_url': f'file://{xpi_path}',
+    'installation_mode': 'normal_installed',
+    'updates_disabled': True,
+}
+
+with open(policies_path, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+
+print(f"thunderclaw: policies merged into {policies_path}")
+PY
+
+cat <<'EOF'
+
+ThunderClaw installed.
+
+Next steps:
+  1) Make sure either claude (claude.ai/code) or codex is installed and
+     logged in for your user. Try: `claude config get` or `codex --version`.
+  2) Start (or restart) Thunderbird. The "AI 助手" space appears in the
+     spaces toolbar.
+  3) On first launch, pick the CLI you want to use and optionally fill
+     in a self-introduction. The pipeline starts automatically.
+
+Files installed:
+  /usr/lib/thunderclaw/                      native host runtime
+  /usr/lib/mozilla/native-messaging-hosts/   NMH manifest
+  /opt/thunderclaw/thunderclaw.xpi           extension
+  /etc/thunderbird/policies.json             auto-install rule
+
+Uninstall: sudo apt remove thunderclaw
+
+EOF
+exit 0

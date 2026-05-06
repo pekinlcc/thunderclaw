@@ -1,0 +1,44 @@
+#!/bin/sh
+# Post-remove for thunderclaw .deb
+# - remove our entry from /etc/thunderbird/policies.json (don't kill the file)
+set -e
+
+EXT_ID=thunderclaw@pekinlcc.dev
+POLICIES=/etc/thunderbird/policies.json
+
+# Only act on full removal (`remove`) and `purge`, not on upgrade.
+case "$1" in
+  remove|purge)
+    if [ -f "$POLICIES" ]; then
+      python3 - "$POLICIES" "$EXT_ID" <<'PY'
+import json
+import os
+import sys
+
+policies_path, ext_id = sys.argv[1], sys.argv[2]
+try:
+    with open(policies_path) as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+
+ext = data.get('policies', {}).get('ExtensionSettings', {})
+if ext_id in ext:
+    del ext[ext_id]
+    if not ext:
+        del data['policies']['ExtensionSettings']
+    if not data.get('policies'):
+        # nothing left, drop the file entirely
+        os.remove(policies_path)
+        print(f"thunderclaw: removed {policies_path} (was empty after pruning)")
+    else:
+        with open(policies_path, 'w') as f:
+            json.dump(data, f, indent=2)
+            f.write('\n')
+        print(f"thunderclaw: pruned entry from {policies_path}")
+PY
+    fi
+    ;;
+esac
+
+exit 0

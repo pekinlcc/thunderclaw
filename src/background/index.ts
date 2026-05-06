@@ -62,9 +62,10 @@ async function ensureSpace() {
 }
 
 async function probeAndStore() {
+  console.log('[ThunderClaw] probe-cli starting');
   try {
     const result = await nativeHost.probeCli();
-    // 只更新 cliStatus，不动 selectedCli——由用户在 UI 显式选
+    console.log('[ThunderClaw] probe-cli result:', JSON.stringify(result));
     await setCliStatus(result);
     return result;
   } catch (err) {

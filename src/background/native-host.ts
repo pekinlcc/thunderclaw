@@ -23,9 +23,11 @@ class NativeHost {
 
   private connect() {
     if (this.port) return this.port;
+    console.log('[ThunderClaw][NMH] connectNative:', HOST_NAME);
     const port = browser.runtime.connectNative(HOST_NAME);
     port.onMessage.addListener((raw) => {
       const msg = raw as NativeResponse;
+      console.log('[ThunderClaw][NMH] recv:', JSON.stringify(msg).slice(0, 200));
       const p = this.pending.get(msg.id);
       if (!p) return;
       this.pending.delete(msg.id);
@@ -35,6 +37,7 @@ class NativeHost {
     port.onDisconnect.addListener(() => {
       const err = browser.runtime.lastError;
       const message = err?.message ?? 'native host disconnected';
+      console.error('[ThunderClaw][NMH] onDisconnect:', message);
       for (const p of this.pending.values()) p.reject(new Error(message));
       this.pending.clear();
       this.port = null;

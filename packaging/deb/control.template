@@ -1,0 +1,18 @@
+Package: thunderclaw
+Version: __VERSION__
+Section: mail
+Priority: optional
+Architecture: all
+Depends: nodejs (>= 18)
+Recommends: thunderbird (>= 128)
+Maintainer: pekinlcc <pekinlcc@gmail.com>
+Homepage: https://github.com/pekinlcc/thunderclaw
+Description: AI mail assistant for Thunderbird
+ ThunderClaw is a Thunderbird extension that groups your local mail
+ by contact, runs LLM analysis per contact via your locally logged-in
+ Claude Code or Codex CLI, and surfaces a daily briefing of "things
+ to act on today" — all on-device, no API keys, no cloud uploads.
+ .
+ This package bundles the Thunderbird extension and its native
+ messaging host. After installation, restart Thunderbird and the
+ AI 助手 space appears in the spaces toolbar.
