@@ -1,0 +1,17 @@
+export const tbStyles = {
+  blue: '#1373D9',
+  blueHover: '#0E5FB5',
+  blueLight: '#E8F1FB',
+  bg: '#F4F4F4',
+  contentBg: '#FFFFFF',
+  sidebarBg: '#F0F0F0',
+  border: '#D7D7D7',
+  borderSoft: '#E5E5E5',
+  text: '#1A1A1A',
+  textMuted: '#6B6B6B',
+  textFaint: '#9A9A9A',
+  unread: '#1373D9',
+  hover: 'rgba(0,0,0,0.04)',
+  select: '#DDE9F8',
+  font: '-apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif',
+} as const;

@@ -1,0 +1,25 @@
+{
+  "name": "thunderclaw",
+  "version": "0.1.0",
+  "description": "AI 邮件助手 · Thunderbird 128 ESR 扩展，由本地 Claude Code / Codex CLI 驱动",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "start": "npm run build && web-ext run --source-dir=dist/extension --firefox=/usr/bin/thunderbird --no-reload"
+  },
+  "devDependencies": {
+    "@types/firefox-webext-browser": "^120.0.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.5.3",
+    "web-ext": "^8.3.0"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

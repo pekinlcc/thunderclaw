@@ -1,0 +1,7 @@
+{
+  "name": "thunderclaw",
+  "description": "ThunderClaw native messaging host",
+  "path": "__HOST_PATH__",
+  "type": "stdio",
+  "allowed_extensions": ["thunderclaw@pekinlcc.dev"]
+}

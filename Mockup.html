@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>ThunderClaw · AI 视图最终设计</title>
+<style>
+  html, body { margin: 0; padding: 0; min-height: 100%; background: #f0eee9; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .demo-toolbar {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+    padding: 12px 22px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .demo-toolbar h1 {
+    margin: 0 12px 0 0; font-size: 13px; font-weight: 600;
+    color: rgba(40,30,20,0.85);
+  }
+  .demo-tabs { display: flex; gap: 6px; }
+  .demo-tab {
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: #fff; color: #6b6b6b; font-size: 12px;
+    cursor: pointer; font: inherit;
+  }
+  .demo-tab:hover { color: #1a1a1a; }
+  .demo-tab.active { background: #1373D9; color: #fff; border-color: #1373D9; }
+  .demo-toolbar .hint { margin-left: auto; color: rgba(60,50,40,.6); font-size: 12px; }
+
+  .stage {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 40px 20px 60px; gap: 18px;
+  }
+  .artboard-label {
+    font-size: 12px; color: rgba(60,50,40,.7);
+    letter-spacing: .02em;
+  }
+  .frame {
+    width: 1100px; height: 700px;
+    border-radius: 8px; overflow: hidden;
+    background: #fff;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .view { display: none; }
+  .view.active { display: flex; }
+</style>
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+</head>
+<body>
+
+<div class="demo-toolbar">
+  <h1>ThunderClaw · AI 视图最终设计</h1>
+  <div class="demo-tabs">
+    <button class="demo-tab active" data-view="v1">① CLI 未登录引导</button>
+    <button class="demo-tab" data-view="v2">② 自我介绍（选填）</button>
+    <button class="demo-tab" data-view="v3">③ Agent 流式日志</button>
+    <button class="demo-tab" data-view="v4">④ 今日简报</button>
+    <button class="demo-tab" data-view="v5">⑤ 今日无重要事项</button>
+  </div>
+  <div class="hint">点击切换屏幕</div>
+</div>
+
+<div id="v1" class="stage view active"><div class="artboard-label">① CLI 选择 · 未登录引导</div><div class="frame" id="root-v1"></div></div>
+<div id="v2" class="stage view"><div class="artboard-label">② 自我介绍 · 选填，提升回复质量</div><div class="frame" id="root-v2"></div></div>
+<div id="v3" class="stage view"><div class="artboard-label">③ 等待界面 · 流式日志</div><div class="frame" id="root-v3"></div></div>
+<div id="v4" class="stage view"><div class="artboard-label">④ Briefing 简报 · 双栏</div><div class="frame" id="root-v4"></div></div>
+<div id="v5" class="stage view"><div class="artboard-label">⑤ 空态 · 今日无重要事项</div><div class="frame" id="root-v5"></div></div>
+
+<script type="text/babel" data-presets="env,react">
+
+// ============================================================
+// 设计 tokens（来源：shell.jsx）
+// ============================================================
+const tbStyles = {
+  blue: '#1373D9',
+  blueHover: '#0E5FB5',
+  blueLight: '#E8F1FB',
+  bg: '#F4F4F4',
+  contentBg: '#FFFFFF',
+  sidebarBg: '#F0F0F0',
+  border: '#D7D7D7',
+  borderSoft: '#E5E5E5',
+  text: '#1A1A1A',
+  textMuted: '#6B6B6B',
+  textFaint: '#9A9A9A',
+  unread: '#1373D9',
+  hover: 'rgba(0,0,0,0.04)',
+  select: '#DDE9F8',
+  font: '-apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif',
+};
+
+// ============================================================
+// 通用图标
+// ============================================================
+function SidebarIcon({ name, size = 16 }) {
+  const stroke = 'currentColor';
+  const sw = 1.5;
+  switch (name) {
+    case 'sparkle':
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <path d="M8 1.5l1.4 3.6 3.6 1.4-3.6 1.4L8 11.5 6.6 7.9 3 6.5l3.6-1.4L8 1.5z" fill={stroke} stroke={stroke} strokeWidth="0.5" strokeLinejoin="round"/>
+          <path d="M12.5 11l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4z" fill={stroke}/>
+        </svg>
+      );
+    case 'mail':
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <rect x="2" y="3.5" width="12" height="9" rx="1.5" stroke={stroke} strokeWidth={sw}/>
+          <path d="M2.5 4.5l5.5 4 5.5-4" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      );
+    case 'contacts':
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="6" r="2.5" stroke={stroke} strokeWidth={sw}/>
+          <path d="M3 13c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+        </svg>
+      );
+    case 'calendar':
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <rect x="2.5" y="3.5" width="11" height="10" rx="1.2" stroke={stroke} strokeWidth={sw}/>
+          <path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+        </svg>
+      );
+    case 'tasks':
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke={stroke} strokeWidth={sw}/>
+          <path d="M5 7l1.5 1.5L10 5.5" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      );
+    case 'chat':
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <path d="M2.5 5c0-1.1.9-2 2-2h7c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2H8l-3 2.5V11h-.5c-1.1 0-2-.9-2-2V5z" stroke={stroke} strokeWidth={sw} strokeLinejoin="round"/>
+        </svg>
+      );
+    case 'settings':
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="2" stroke={stroke} strokeWidth={sw}/>
+          <path d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+        </svg>
+      );
+    case 'collapse':
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <path d="M9.5 4l-4 4 4 4" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+// ============================================================
+// Thunderbird 外壳（来源:shell.jsx）
+// ============================================================
+function TrafficLights() {
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingLeft: 14, paddingRight: 14 }}>
+      <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#FF5F57' }}/>
+      <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#FEBC2E' }}/>
+      <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#28C840' }}/>
+    </div>
+  );
+}
+
+function TitleBar() {
+  return (
+    <div style={{
+      height: 42, background: tbStyles.bg,
+      borderBottom: `1px solid ${tbStyles.border}`,
+      display: 'flex', alignItems: 'center', flexShrink: 0,
+    }}>
+      <TrafficLights />
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+        <div style={{
+          width: 480, height: 26,
+          background: '#FFFFFF',
+          border: `1px solid ${tbStyles.border}`,
+          borderRadius: 5,
+          display: 'flex', alignItems: 'center',
+          padding: '0 10px', fontSize: 12, color: tbStyles.textMuted, gap: 8,
+        }}>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <circle cx="7" cy="7" r="5" stroke={tbStyles.textMuted} strokeWidth="1.4"/>
+            <path d="M11 11l3 3" stroke={tbStyles.textMuted} strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+          <span style={{ flex: 1 }}>搜索… ⌘K</span>
+        </div>
+      </div>
+      <div style={{ paddingRight: 14 }}>
+        <button style={{ width: 28, height: 22, border: 'none', background: 'transparent', borderRadius: 4, cursor: 'pointer' }}>
+          <svg width="16" height="14" viewBox="0 0 16 14" fill="none">
+            <path d="M2 3h12M2 7h12M2 11h12" stroke={tbStyles.text} strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function IconSidebar() {
+  const items = [
+    { id: 'ai', icon: 'sparkle' },
+    { id: 'mail', icon: 'mail' },
+    { id: 'contacts', icon: 'contacts' },
+    { id: 'calendar', icon: 'calendar' },
+    { id: 'tasks', icon: 'tasks' },
+    { id: 'chat', icon: 'chat' },
+  ];
+  return (
+    <div style={{
+      width: 36, background: tbStyles.sidebarBg,
+      borderRight: `1px solid ${tbStyles.border}`,
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      paddingTop: 6, paddingBottom: 6, flexShrink: 0,
+    }}>
+      {items.map(it => (
+        <div key={it.id} style={{
+          width: 28, height: 28, marginBottom: 2, borderRadius: 5,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: it.id === 'ai' ? '#FFFFFF' : 'transparent',
+          boxShadow: it.id === 'ai' ? '0 0 0 1px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05)' : 'none',
+          cursor: 'pointer',
+          color: it.id === 'ai' ? tbStyles.blue : '#5A5A5A',
+        }}>
+          <SidebarIcon name={it.icon} size={16} />
+        </div>
+      ))}
+      <div style={{ flex: 1 }}/>
+      <div style={{
+        width: 28, height: 28, marginBottom: 2, borderRadius: 5,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'pointer', color: '#5A5A5A',
+      }}>
+        <SidebarIcon name="settings" size={15} />
+      </div>
+      <div style={{
+        width: 28, height: 28, borderRadius: 5,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'pointer', color: '#5A5A5A',
+      }}>
+        <SidebarIcon name="collapse" size={14} />
+      </div>
+    </div>
+  );
+}
+
+function AITabBar({ subtitle }) {
+  return (
+    <div style={{
+      height: 32, background: tbStyles.bg,
+      borderBottom: `1px solid ${tbStyles.border}`,
+      display: 'flex', alignItems: 'flex-end', paddingLeft: 8, flexShrink: 0,
+    }}>
+      <div style={{
+        height: 28, background: tbStyles.contentBg,
+        borderTopLeftRadius: 6, borderTopRightRadius: 6,
+        border: `1px solid ${tbStyles.border}`, borderBottom: 'none',
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '0 12px', fontSize: 12.5, color: tbStyles.text,
+        marginBottom: -1, position: 'relative', zIndex: 1,
+      }}>
+        <span style={{ color: tbStyles.blue, display: 'inline-flex' }}>
+          <SidebarIcon name="sparkle" size={13} />
+        </span>
+        <span style={{ fontWeight: 500 }}>{subtitle}</span>
+        <span style={{ marginLeft: 6, color: tbStyles.textFaint, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</span>
+      </div>
+    </div>
+  );
+}
+
+function StatusBar({ message }) {
+  return (
+    <div style={{
+      height: 22, background: tbStyles.bg,
+      borderTop: `1px solid ${tbStyles.border}`,
+      display: 'flex', alignItems: 'center',
+      padding: '0 10px', fontSize: 11, color: tbStyles.textMuted,
+      flexShrink: 0, gap: 8,
+    }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#3CB371', display: 'inline-block' }}/>
+      <span>{message}</span>
+      <span style={{ flex: 1 }}/>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+          <rect x="2.5" y="3.5" width="11" height="10" rx="1" stroke={tbStyles.textMuted} strokeWidth="1.3"/>
+          <path d="M2.5 6.5h11" stroke={tbStyles.textMuted} strokeWidth="1.3"/>
+        </svg>
+        今日有日程
+      </span>
+    </div>
+  );
+}
+
+function ThunderbirdShell({ children, statusMessage, tabSubtitle }) {
+  return (
+    <div style={{
+      width: '100%', height: '100%',
+      display: 'flex', flexDirection: 'column',
+      background: tbStyles.contentBg,
+      fontFamily: tbStyles.font, color: tbStyles.text,
+      overflow: 'hidden', borderRadius: 8,
+    }}>
+      <TitleBar />
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        <IconSidebar />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <AITabBar subtitle={tabSubtitle} />
+          <div style={{ flex: 1, minHeight: 0, background: tbStyles.contentBg, overflow: 'hidden' }}>
+            {children}
+          </div>
+        </div>
+      </div>
+      <StatusBar message={statusMessage} />
+    </div>
+  );
+}
+
+// ============================================================
+// CLI Logos
+// ============================================================
+function ClaudeLogo({ size = 32 }) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: size * 0.22,
+      background: 'linear-gradient(135deg, #C96442 0%, #A04E33 100%)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#FFF', fontWeight: 600, fontSize: size * 0.5, flexShrink: 0,
+    }}>C</div>
+  );
+}
+
+function CodexLogo({ size = 32 }) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: size * 0.22,
+      background: '#1A1A1A',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#FFF', fontWeight: 600, fontSize: size * 0.42, flexShrink: 0,
+      border: '1px solid #333',
+    }}>X</div>
+  );
+}
+
+// ============================================================
+// 屏幕 ① CLI 未登录引导（来源:cli-picker.jsx CLIPickerC）
+// ============================================================
+function CLIPickerC() {
+  return (
+    <div style={{
+      width: '100%', height: '100%',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 32, background: '#FBFBFC',
+    }}>
+      <div style={{ width: 560 }}>
+        <div style={{ textAlign: 'center', marginBottom: 22 }}>
+          <div style={{
+            width: 52, height: 52, margin: '0 auto 14px', borderRadius: 12,
+            background: 'linear-gradient(135deg, #1373D9 0%, #4A9FE5 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#FFF', boxShadow: '0 6px 20px rgba(19,115,217,0.25)',
+          }}>
+            <SidebarIcon name="sparkle" size={24} />
+          </div>
+          <h1 style={{ fontSize: 20, margin: '0 0 6px', fontWeight: 600 }}>需要先登录一个本地 AI 工具</h1>
+          <p style={{ fontSize: 13, color: tbStyles.textMuted, margin: 0, lineHeight: 1.5 }}>
+            AI 邮件助手依赖你本地的命令行工具运行模型。<br/>
+            请在终端中登录任意一个工具后再回来。
+          </p>
+        </div>
+
+        <CLIGuideCard
+          logo={<ClaudeLogo size={32} />}
+          title="Claude Code"
+          status="未检测到登录状态"
+          tag="未登录" tagBg="#FEF3F0" tagFg="#C44A2C"
+          commands={['claude login']}
+        />
+
+        <CLIGuideCard
+          logo={<CodexLogo size={32} />}
+          title="Codex CLI"
+          status="未安装"
+          tag="未安装" tagBg="#F4F4F4" tagFg={tbStyles.textMuted}
+          commands={['brew install codex', 'codex login']}
+        />
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <a href="#" style={{ fontSize: 12, color: tbStyles.blue, textDecoration: 'none' }}>查看完整文档 →</a>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button style={{
+              padding: '7px 14px', fontSize: 12.5,
+              background: '#FFF', color: tbStyles.text,
+              border: `1px solid ${tbStyles.border}`, borderRadius: 5,
+              cursor: 'pointer', font: 'inherit',
+            }}>稍后</button>
+            <button style={{
+              padding: '7px 16px', fontSize: 12.5, fontWeight: 500,
+              background: tbStyles.blue, color: '#FFF',
+              border: 'none', borderRadius: 5,
+              cursor: 'pointer', font: 'inherit',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                border: '1.5px solid #FFF', borderTopColor: 'transparent',
+                animation: 'tbspin 0.9s linear infinite',
+              }}/>
+              重新检测
+            </button>
+          </div>
+        </div>
+
+        <style>{`@keyframes tbspin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    </div>
+  );
+}
+
+function CLIGuideCard({ logo, title, status, tag, tagBg, tagFg, commands }) {
+  return (
+    <div style={{
+      background: '#FFF',
+      border: `1px solid ${tbStyles.borderSoft}`,
+      borderRadius: 10, padding: 16, marginBottom: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        {logo}
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600 }}>{title}</div>
+          <div style={{ fontSize: 11.5, color: tbStyles.textMuted }}>{status}</div>
+        </div>
+        <div style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, background: tagBg, color: tagFg, fontWeight: 500 }}>{tag}</div>
+      </div>
+      {commands.map((cmd, i) => (
+        <div key={i} style={{
+          background: '#1A1A1A', borderRadius: 6,
+          padding: '10px 12px',
+          fontFamily: 'ui-monospace, "SF Mono", monospace',
+          fontSize: 12, color: '#E6E6E6',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: i < commands.length - 1 ? 6 : 0,
+        }}>
+          <span><span style={{ color: '#7AB8FF' }}>$</span> {cmd}</span>
+          <button style={{
+            fontSize: 10.5, padding: '2px 8px', borderRadius: 4,
+            background: 'rgba(255,255,255,0.1)', color: '#CCC',
+            border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+          }}>复制</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// 屏幕 ② 自我介绍（选填）
+// 设计参考：屏幕 ① 的居中卡片布局
+// ============================================================
+function IntroSetupScreen() {
+  return (
+    <div style={{
+      width: '100%', height: '100%',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 32, background: '#FBFBFC',
+    }}>
+      <div style={{ width: 560 }}>
+        <div style={{ textAlign: 'center', marginBottom: 22 }}>
+          <div style={{
+            width: 52, height: 52, margin: '0 auto 14px', borderRadius: 12,
+            background: 'linear-gradient(135deg, #1373D9 0%, #4A9FE5 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#FFF', boxShadow: '0 6px 20px rgba(19,115,217,0.25)',
+          }}>
+            <svg width="24" height="24" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="6" r="2.5" stroke="#FFF" strokeWidth="1.6"/>
+              <path d="M3 13c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5" stroke="#FFF" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <h1 style={{ fontSize: 20, margin: '0 0 6px', fontWeight: 600 }}>简单介绍一下你自己</h1>
+          <p style={{ fontSize: 13, color: tbStyles.textMuted, margin: 0, lineHeight: 1.5 }}>
+            AI 写邮件回复时会参考这段话，让语气和身份更准。<br/>
+            可以跳过，AI 会从你的历史邮件里自己摸索。
+          </p>
+        </div>
+
+        <div style={{
+          background: '#FFF',
+          border: `1px solid ${tbStyles.borderSoft}`,
+          borderRadius: 10, padding: 16, marginBottom: 12,
+        }}>
+          <div style={{
+            fontSize: 11, fontWeight: 600, color: tbStyles.textMuted,
+            marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.04em',
+          }}>
+            自我介绍 · 选填
+          </div>
+          <textarea
+            defaultValue=""
+            placeholder={'例：\n• 我是某公司的产品经理，主要跟设计师、研发、销售打交道\n• 邮件大多英文，对内偶尔中文\n• 周末不处理工作邮件'}
+            style={{
+              width: '100%', minHeight: 140, padding: 12,
+              fontSize: 13, lineHeight: 1.65,
+              fontFamily: tbStyles.font, color: tbStyles.text,
+              border: `1px solid ${tbStyles.border}`, borderRadius: 6,
+              resize: 'vertical', outline: 'none', boxSizing: 'border-box',
+              background: '#FBFBFC',
+            }}
+          />
+          <div style={{ fontSize: 11, color: tbStyles.textFaint, marginTop: 8 }}>
+            之后可以在 设置 → AI 助手 里随时修改
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 11.5, color: tbStyles.textFaint }}>
+            内容只保留在本地，不会上传到任何服务器
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button style={{
+              padding: '7px 14px', fontSize: 12.5,
+              background: '#FFF', color: tbStyles.text,
+              border: `1px solid ${tbStyles.border}`, borderRadius: 5,
+              cursor: 'pointer', font: 'inherit',
+            }}>跳过</button>
+            <button style={{
+              padding: '7px 16px', fontSize: 12.5, fontWeight: 500,
+              background: tbStyles.blue, color: '#FFF',
+              border: 'none', borderRadius: 5,
+              cursor: 'pointer', font: 'inherit',
+            }}>保存并继续</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 屏幕 ③ 流式日志加载（来源:loading.jsx LoadingA）
+// ============================================================
+const PIPELINE_STAGES = [
+  { id: 'roost',    title: 'Roost · 归集',     desc: '聚合本地邮件 + 日历，按联系人建上下文' },
+  { id: 'rubric',   title: 'Rubric · 学习偏好', desc: '生成/更新重要性判定标准（首次跑/有反馈时）' },
+  { id: 'pulse',    title: 'ContactPulse · 逐人分析', desc: '识别每个联系人当前的重要事项（串行）' },
+  { id: 'briefing', title: 'Briefing · 汇总',  desc: '合并、去重、排出优先级' },
+];
+
+function LoadingA() {
+  const currentStage = 2;
+  return (
+    <div style={{
+      width: '100%', height: '100%',
+      display: 'grid', gridTemplateColumns: '260px 1fr',
+      background: '#FBFBFC',
+    }}>
+      <div style={{
+        padding: '24px 18px',
+        borderRight: `1px solid ${tbStyles.borderSoft}`,
+        background: '#FFF', overflow: 'auto',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <span style={{ color: tbStyles.blue }}><SidebarIcon name="sparkle" size={14} /></span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: tbStyles.blue, letterSpacing: '.02em' }}>AI 助手</span>
+        </div>
+        <div style={{ fontSize: 13, color: tbStyles.textMuted, marginBottom: 18 }}>正在分析你的邮件…</div>
+        <div style={{ fontSize: 11, color: tbStyles.textFaint, marginBottom: 8 }}>使用 Claude Code · v1.0.42</div>
+
+        <div style={{ marginTop: 18 }}>
+          {PIPELINE_STAGES.map((s, i) => {
+            const status = i < currentStage ? 'done' : i === currentStage ? 'running' : 'pending';
+            return (
+              <div key={s.id} style={{ display: 'flex', gap: 10, marginBottom: 16, position: 'relative' }}>
+                {i < PIPELINE_STAGES.length - 1 && (
+                  <div style={{
+                    position: 'absolute', left: 9, top: 22, bottom: -10, width: 2,
+                    background: i < currentStage ? '#3CB371' : '#E0E0E0',
+                  }}/>
+                )}
+                <div style={{
+                  width: 20, height: 20, borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: status === 'done' ? '#3CB371' : '#FFF',
+                  border: status === 'pending' ? '2px solid #E0E0E0'
+                        : status === 'running' ? `2px solid ${tbStyles.blue}` : 'none',
+                  flexShrink: 0, zIndex: 1,
+                }}>
+                  {status === 'done' && (
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                      <path d="M3 8l3 3 7-7" stroke="#FFF" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                  {status === 'running' && (
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: tbStyles.blue,
+                      animation: 'tbpulse 1.2s ease-in-out infinite',
+                    }}/>
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    fontSize: 12.5, fontWeight: 500,
+                    color: status === 'pending' ? tbStyles.textFaint : tbStyles.text,
+                  }}>{s.title}</div>
+                  <div style={{
+                    fontSize: 11, color: status === 'pending' ? tbStyles.textFaint : tbStyles.textMuted,
+                    marginTop: 1, lineHeight: 1.4,
+                  }}>{s.desc}</div>
+                  <div style={{
+                    fontSize: 10, color: tbStyles.textFaint,
+                    marginTop: 3, fontFamily: 'ui-monospace, monospace',
+                  }}>
+                    {status === 'done' && '✓ 完成 · 1.4s'}
+                    {status === 'running' && '运行中…'}
+                    {status === 'pending' && '等待'}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{
+          marginTop: 22, padding: '10px 12px',
+          background: tbStyles.blueLight,
+          borderRadius: 7, fontSize: 11, color: '#0A4D8F', lineHeight: 1.5,
+        }}>
+          首次较慢（仅活跃联系人约 5-10 分钟）<br/>
+          之后只增量处理新邮件 / 日历变化。
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{
+          padding: '14px 22px',
+          borderBottom: `1px solid ${tbStyles.borderSoft}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: '#FFF',
+        }}>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 2 }}>
+              ContactPulse · 正在分析 Sarah Mitchell
+            </div>
+            <div style={{ fontSize: 11.5, color: tbStyles.textMuted }}>
+              已处理 <strong style={{ color: tbStyles.text }}>148</strong> / 312 个联系人 · 12 封新邮件待分析
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button style={{
+              padding: '5px 11px', fontSize: 11.5,
+              background: '#FFF', color: tbStyles.textMuted,
+              border: `1px solid ${tbStyles.border}`, borderRadius: 4,
+              cursor: 'pointer', font: 'inherit',
+            }}>暂停</button>
+            <button style={{
+              padding: '5px 11px', fontSize: 11.5,
+              background: '#FFF', color: tbStyles.textMuted,
+              border: `1px solid ${tbStyles.border}`, borderRadius: 4,
+              cursor: 'pointer', font: 'inherit',
+            }}>后台运行</button>
+          </div>
+        </div>
+
+        <div style={{
+          flex: 1, minHeight: 0, overflow: 'auto',
+          padding: '14px 22px',
+          fontFamily: 'ui-monospace, "SF Mono", "Menlo", monospace',
+          fontSize: 12, lineHeight: 1.65, color: tbStyles.text,
+        }}>
+          <LogLine ts="14:02:11" tag="roost" tagColor="#2A8B3F">
+            扫描 IMAP 本地缓存：<span style={{ color: tbStyles.textMuted }}>~/Library/Thunderbird/.../INBOX.msf</span>
+          </LogLine>
+          <LogLine ts="14:02:12" tag="roost" tagColor="#2A8B3F">
+            索引完成：<strong>4,283</strong> 封邮件 · <strong>312</strong> 个唯一邮箱地址 · 跨 6 个文件夹
+          </LogLine>
+          <LogLine ts="14:02:12" tag="roost" tagColor="#2A8B3F">
+            通讯录命中 <strong>89</strong> 人 · "Collected" 命中 <strong>134</strong> 人 · 裸地址 <strong>89</strong> 个
+          </LogLine>
+          <LogLine ts="14:02:12" tag="roost" tagColor="#2A8B3F">
+            载入日历：<strong>12</strong> 个未来事件 · 用作回复时间冲突参考
+          </LogLine>
+          <LogLine ts="14:02:13" tag="roost" tagColor="#2A8B3F">✓ 完成</LogLine>
+          <div style={{ height: 8 }}/>
+          <LogLine ts="14:02:13" tag="rubric" tagColor="#9B5BC8">
+            读取 <span style={{ color: tbStyles.textMuted }}>~/.config/thunderclaw/rubric.md</span>（v7，142 行）
+          </LogLine>
+          <LogLine ts="14:02:13" tag="rubric" tagColor="#9B5BC8">
+            合并 8 条新反馈：3 条 "已知晓"、4 条 "不重要"、1 条 "已发送"
+          </LogLine>
+          <LogLine ts="14:02:14" tag="rubric" tagColor="#9B5BC8">
+            ✓ rubric 已更新到 v8 · 学到 1 条新模式：含 "noreply@broker.example" → 月结类，建议低优
+          </LogLine>
+          <div style={{ height: 8 }}/>
+          <LogLine ts="14:02:14" tag="pulse" tagColor={tbStyles.blue}>
+            开始逐人分析（串行）。优先处理：未读 / 最近 7 天活跃 / 互发频次 ≥ 3
+          </LogLine>
+          <LogLine ts="14:02:14" tag="pulse" tagColor={tbStyles.blue} thought>
+            分析 <strong>wang.teacher@school.example</strong>（5 封邮件）
+          </LogLine>
+          <LogLine ts="14:02:15" tag="pulse" tagColor={tbStyles.blue} indent>
+            <span style={{ color: tbStyles.textMuted }}>读取邮件正文 + 头信息…</span>
+          </LogLine>
+          <LogLine ts="14:02:16" tag="pulse" tagColor={tbStyles.blue} indent>
+            识别到主题："期中学术进度报告"，<span style={{ color: '#C44A2C' }}>需要回复</span>
+          </LogLine>
+          <LogLine ts="14:02:16" tag="pulse" tagColor={tbStyles.blue} indent>
+            ✓ 1 项重要事项 · 标记为 <span style={{ color: '#C44A2C' }}>高优先级</span>
+          </LogLine>
+          <LogLine ts="14:02:17" tag="pulse" tagColor={tbStyles.blue} thought>
+            分析 <strong>sarah.mitchell@school.example</strong>（12 封邮件）
+          </LogLine>
+          <LogLine ts="14:02:18" tag="pulse" tagColor={tbStyles.blue} indent>
+            <span style={{ color: tbStyles.textMuted }}>跨度较长（28 天），抽取关键事件…</span>
+          </LogLine>
+          <LogLine ts="14:02:19" tag="pulse" tagColor={tbStyles.blue} indent thought>
+            "Winter Show 服装尺寸" — 需要在 12/05 前确认
+          </LogLine>
+          <LogLine ts="14:02:19" tag="pulse" tagColor={tbStyles.blue} indent thought>
+            "节日活动通知" — 提醒类，可批量"已知晓"
+          </LogLine>
+          <LogLine ts="14:02:20" tag="pulse" tagColor={tbStyles.blue} indent>
+            ✓ 2 项事项（1 高 / 1 中）
+          </LogLine>
+          <LogLine ts="14:02:21" tag="pulse" tagColor={tbStyles.blue} thought>
+            分析 <strong>noreply@social.example</strong>（裸地址，<span style={{ color: tbStyles.textFaint }}>系统通知类</span>）
+          </LogLine>
+          <div style={{
+            paddingLeft: 92, color: tbStyles.textFaint,
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <span style={{
+              display: 'inline-block', width: 8, height: 14,
+              background: tbStyles.text,
+              animation: 'tbblink 1s steps(2) infinite',
+            }}/>
+          </div>
+        </div>
+
+        <style>{`
+          @keyframes tbpulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+          @keyframes tbblink { 50% { opacity: 0; } }
+        `}</style>
+      </div>
+    </div>
+  );
+}
+
+function LogLine({ ts, tag, tagColor, children, indent, thought }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 10,
+      marginLeft: indent ? 20 : 0,
+      opacity: thought ? 0.85 : 1,
+    }}>
+      <span style={{ color: tbStyles.textFaint, flexShrink: 0, width: 56 }}>{ts}</span>
+      <span style={{ color: tagColor, flexShrink: 0, width: 64, fontWeight: 500 }}>{tag}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>{children}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// 屏幕 ④ 双栏简报（来源:briefing.jsx BriefingC）
+// ============================================================
+// 完全虚构的样本数据，仅用于设计展示。任何与真实人物/公司的相似都是巧合。
+const MOCK_ITEMS = [
+  {
+    id: 1, priority: 'high',
+    contact: '王老师', avatar: '王', avatarColor: '#C44A2C',
+    email: 'wang.teacher@school.example',
+    title: '需要回复 期中学术进度报告',
+    summary: '老师在 11/26 询问期中学术进度报告的填写情况，附件中包含 6 项评估指标。',
+    deadline: '建议今日内回复', emails: 5,
+    suggestedReply: '王老师好：\n\n报告已经填写完成。我在表格中按 6 项指标分别给出了回应。附件请查收。\n\n如果需要进一步说明任何一项，请随时告诉我。\n\n谢谢',
+    reason: '上一封邮件你提到"周末填写"，今天已是 11/27 周三，建议今日内回复以避免拖延。语气参考过往沟通：简短、直接、保留中文敬语。',
+  },
+  {
+    id: 2, priority: 'high',
+    contact: 'Sarah Mitchell', avatar: 'S', avatarColor: '#1373D9',
+    email: 'sarah.mitchell@school.example',
+    title: '12/05 前确认 Winter Show 服装尺寸',
+    summary: 'Sarah 在过去 28 天连续发了 3 封邮件，最后一封要求在 12/05 前确认演出服装尺寸（尺码表见附件）。',
+    deadline: '12/05 截止 · 还剩 8 天', emails: 12,
+    suggestedReply: 'Hi Sarah,\n\nThanks for the reminders. The costume size will be Youth Medium.\n\nLet me know if you need anything else for the show.\n\nBest,',
+    reason: '从邮件正文中识别到尺码表（XS/S/M/L/XL）。基于过往邮件中关于尺寸的讨论推断为 Youth Medium，请你确认。',
+  },
+  {
+    id: 3, priority: 'medium',
+    contact: 'Sample Invest', avatar: 'S', avatarColor: '#5A4FCF',
+    email: 'notice@invest.example',
+    title: '投资交易已完成',
+    summary: '你参与的某项投资在 11/27 完成结算，可以查看最终文件和持仓证明。',
+    deadline: '无紧急时限', emails: 3,
+    suggestedReply: null,
+    reason: '单次通知类邮件，含查看文档链接。无需回复，标记为已知晓即可。',
+  },
+  {
+    id: 4, priority: 'medium',
+    contact: 'Sample Service', avatar: 'S', avatarColor: '#FC5200',
+    email: 'mail@service.example',
+    title: '服务条款更新',
+    summary: '11/26 通知服务条款变更，将于 12/26 生效。变更涉及数据使用与会员权益条款。',
+    deadline: '12/26 生效', emails: 1,
+    suggestedReply: null,
+    reason: '通用条款更新邮件，群发模板。可以"已知晓"，无需回复。',
+  },
+  {
+    id: 5, priority: 'medium',
+    contact: 'Sample Broker', avatar: 'B', avatarColor: '#FF7A00',
+    email: 'noreply@broker.example',
+    title: '11 月对账单',
+    summary: '11/24 出具的月度对账单。包含本月持仓变动和利息计算。',
+    deadline: null, emails: 1,
+    suggestedReply: null,
+    reason: '系统自动月结邮件。建议归档到"账单"文件夹，可设置自动规则。',
+  },
+  {
+    id: 6, priority: 'low',
+    contact: 'Sample Bank', avatar: 'B', avatarColor: '#003DA5',
+    email: 'marketing@bank.example',
+    title: '防欺诈月度提醒',
+    summary: '月度防欺诈宣传邮件。',
+    deadline: null, emails: 1,
+    suggestedReply: null,
+    reason: '营销 / 教育类邮件。可以批量"已知晓"或退订。',
+  },
+  {
+    id: 7, priority: 'low',
+    contact: 'Sample Social', avatar: 'S', avatarColor: '#D6249F',
+    email: 'security@social.example',
+    title: '账户登录提醒',
+    summary: '11/27 03:08 你的账户在新设备上登录。',
+    deadline: null, emails: 1,
+    suggestedReply: null,
+    reason: '系统通知邮件。如不是本人操作请尽快修改密码。',
+  },
+];
+
+function Avatar({ char, color, size = 28 }) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%',
+      background: color, color: '#FFF',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: size * 0.42, fontWeight: 600, flexShrink: 0,
+    }}>{char}</div>
+  );
+}
+
+function PriorityPill({ priority }) {
+  const map = {
+    high:   { bg: '#FEF1ED', fg: '#C44A2C', label: '高' },
+    medium: { bg: '#FEF8E7', fg: '#A37911', label: '中' },
+    low:    { bg: '#F1F1F4', fg: '#6B6B6B', label: '低' },
+  };
+  const m = map[priority];
+  return (
+    <span style={{
+      fontSize: 10.5, padding: '1px 7px', borderRadius: 3,
+      background: m.bg, color: m.fg, fontWeight: 600,
+      letterSpacing: '.02em',
+    }}>{m.label}</span>
+  );
+}
+
+function btnStyle(kind) {
+  const base = {
+    padding: '5px 11px', fontSize: 11.5, fontWeight: 500,
+    borderRadius: 4, cursor: 'pointer', font: 'inherit',
+    display: 'inline-flex', alignItems: 'center',
+    border: 'none', whiteSpace: 'nowrap',
+  };
+  switch (kind) {
+    case 'primary':       return { ...base, background: tbStyles.blue, color: '#FFF' };
+    case 'ghost':         return { ...base, background: '#FFF', color: tbStyles.text, border: `1px solid ${tbStyles.border}` };
+    case 'ghost-active':  return { ...base, background: tbStyles.blueLight, color: tbStyles.blue, border: `1px solid ${tbStyles.blue}` };
+    case 'ghost-subtle':  return { ...base, background: 'transparent', color: tbStyles.textMuted };
+  }
+}
+
+function BriefingC() {
+  const [selected, setSelected] = React.useState(1);
+  const item = MOCK_ITEMS[selected];
+
+  return (
+    <div style={{
+      width: '100%', height: '100%',
+      display: 'grid', gridTemplateColumns: '320px 1fr',
+      background: '#FFF',
+    }}>
+      <div style={{
+        borderRight: `1px solid ${tbStyles.borderSoft}`,
+        display: 'flex', flexDirection: 'column', background: '#FBFBFC',
+      }}>
+        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${tbStyles.borderSoft}` }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>今日简报</div>
+          <div style={{ fontSize: 11, color: tbStyles.textMuted }}>7 项 · 来自 312 联系人</div>
+        </div>
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          {MOCK_ITEMS.map((it, i) => (
+            <div key={it.id} onClick={() => setSelected(i)} style={{
+              padding: '10px 16px',
+              borderBottom: `1px solid ${tbStyles.borderSoft}`,
+              background: selected === i ? tbStyles.select : 'transparent',
+              cursor: 'pointer',
+              borderLeft: selected === i ? `3px solid ${tbStyles.blue}` : '3px solid transparent',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                <Avatar char={it.avatar} color={it.avatarColor} size={20} />
+                <span style={{ fontSize: 11.5, fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {it.contact}
+                </span>
+                <PriorityPill priority={it.priority} />
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 2, color: tbStyles.text, lineHeight: 1.35 }}>
+                {it.title}
+              </div>
+              <div style={{
+                fontSize: 11, color: tbStyles.textMuted,
+                overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box',
+                WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: 1.45,
+              }}>
+                {it.summary}
+              </div>
+              {it.deadline && it.priority === 'high' && (
+                <div style={{ fontSize: 10.5, color: '#C44A2C', marginTop: 4, fontWeight: 500 }}>
+                  ⏱ {it.deadline}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div style={{
+          padding: '16px 28px',
+          borderBottom: `1px solid ${tbStyles.borderSoft}`,
+          display: 'flex', alignItems: 'center', gap: 14,
+        }}>
+          <Avatar char={item.avatar} color={item.avatarColor} size={42} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{item.contact}</span>
+              <PriorityPill priority={item.priority} />
+            </div>
+            <div style={{ fontSize: 11.5, color: tbStyles.textMuted }}>
+              {item.email} · {item.emails} 封相关邮件 · 最近活动 11/26
+            </div>
+          </div>
+          <button style={btnStyle('ghost')}>查看联系人主页</button>
+        </div>
+
+        <div style={{ flex: 1, overflow: 'auto', padding: '20px 28px' }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px', lineHeight: 1.3 }}>{item.title}</h2>
+          {item.deadline && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              fontSize: 11.5, padding: '3px 9px', borderRadius: 4,
+              background: item.priority === 'high' ? '#FEF1ED' : '#FEF8E7',
+              color: item.priority === 'high' ? '#C44A2C' : '#A37911',
+              fontWeight: 500, marginBottom: 18,
+            }}>⏱ {item.deadline}</div>
+          )}
+
+          <div style={{
+            background: '#FBFBFC',
+            border: `1px solid ${tbStyles.borderSoft}`,
+            borderRadius: 8, padding: '14px 16px', marginBottom: 14,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: tbStyles.textMuted, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>
+              发生了什么
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.6 }}>{item.summary}</div>
+          </div>
+
+          {item.suggestedReply ? (
+            <div style={{
+              border: `1px solid ${tbStyles.borderSoft}`,
+              borderRadius: 8, marginBottom: 14, overflow: 'hidden',
+            }}>
+              <div style={{
+                padding: '10px 16px',
+                borderBottom: `1px solid ${tbStyles.borderSoft}`,
+                background: '#FFF',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span style={{ color: tbStyles.blue, display: 'inline-flex' }}><SidebarIcon name="sparkle" size={13} /></span>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: tbStyles.blue, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                  建议回复
+                </span>
+                <div style={{ flex: 1 }}/>
+                <span style={{ fontSize: 11, color: tbStyles.textMuted }}>语气：</span>
+                <button style={{ ...btnStyle('ghost'), padding: '3px 9px', fontSize: 11 }}>正式</button>
+                <button style={{ ...btnStyle('ghost-active'), padding: '3px 9px', fontSize: 11 }}>友好</button>
+                <button style={{ ...btnStyle('ghost'), padding: '3px 9px', fontSize: 11 }}>简短</button>
+              </div>
+              <div style={{
+                padding: '14px 16px',
+                fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap',
+              }}>{item.suggestedReply}</div>
+            </div>
+          ) : (
+            <div style={{
+              background: '#FEF8E7', border: '1px solid #F2E0A8',
+              borderRadius: 8, padding: '12px 16px',
+              fontSize: 12.5, color: '#7A5A11', marginBottom: 14,
+            }}>
+              <strong>无需回复。</strong> 这是一封通知类邮件，确认后即可标记为已知晓。
+            </div>
+          )}
+
+          <div style={{
+            background: tbStyles.blueLight,
+            borderRadius: 8, padding: '12px 16px',
+            marginBottom: 18, display: 'flex', gap: 8,
+          }}>
+            <span style={{ color: tbStyles.blue, flexShrink: 0, fontSize: 14 }}>💡</span>
+            <div style={{ fontSize: 12.5, color: '#0A4D8F', lineHeight: 1.55 }}>
+              <strong>AI 的判断依据：</strong> {item.reason}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            {item.suggestedReply ? (
+              <>
+                <button style={{ ...btnStyle('primary'), padding: '7px 16px', fontSize: 12.5 }}>
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ marginRight: 5 }}>
+                    <path d="M2.5 3.5h11v9H6l-3.5 2.5V3.5z" stroke="#FFF" strokeWidth="1.4" strokeLinejoin="round" fill="none"/>
+                    <path d="M5.5 7.5h5M5.5 9.5h3" stroke="#FFF" strokeWidth="1.3" strokeLinecap="round"/>
+                  </svg>
+                  在撰写窗口打开
+                </button>
+                <button style={{ ...btnStyle('ghost'), padding: '7px 14px', fontSize: 12.5 }}>复制到剪贴板</button>
+              </>
+            ) : (
+              <button style={{ ...btnStyle('primary'), padding: '7px 16px', fontSize: 12.5 }}>我已知晓</button>
+            )}
+            <button style={{ ...btnStyle('ghost'), padding: '7px 14px', fontSize: 12.5 }}>
+              查看 {item.emails} 封原邮件
+            </button>
+            <div style={{ flex: 1 }}/>
+            <button style={{ ...btnStyle('ghost-subtle'), padding: '7px 12px', fontSize: 12 }}>
+              不重要 · 不再提示
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 屏幕 ⑤ 空态（基于设计风格新增）
+// 用户原话："今日无重要事项 + 列出最近几个低优先级摘要供参考"
+// ============================================================
+function BriefingEmpty() {
+  const lowItems = MOCK_ITEMS.filter(i => i.priority === 'low' || i.priority === 'medium').slice(0, 4);
+  return (
+    <div style={{
+      width: '100%', height: '100%',
+      display: 'flex', flexDirection: 'column', background: '#FFF',
+    }}>
+      <div style={{
+        padding: '14px 24px',
+        borderBottom: `1px solid ${tbStyles.borderSoft}`,
+      }}>
+        <div style={{ fontSize: 14.5, fontWeight: 600 }}>
+          今日简报 <span style={{ color: tbStyles.textMuted, fontWeight: 400 }}>· 11月27日</span>
+        </div>
+        <div style={{ fontSize: 11.5, color: tbStyles.textMuted, marginTop: 2 }}>
+          来自 <strong style={{ color: tbStyles.text }}>312</strong> 个联系人 · 分析于 14:03
+        </div>
+      </div>
+
+      <div style={{
+        padding: '48px 24px 24px', textAlign: 'center',
+      }}>
+        <div style={{
+          width: 64, height: 64, margin: '0 auto 16px',
+          borderRadius: 16,
+          background: 'linear-gradient(135deg, #E8F1FB 0%, #DDE9F8 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: tbStyles.blue,
+        }}>
+          <svg width="30" height="30" viewBox="0 0 16 16" fill="none">
+            <path d="M3 8.5l3 3 7-7" stroke={tbStyles.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 6px' }}>今日无重要事项</h2>
+        <p style={{ fontSize: 13, color: tbStyles.textMuted, margin: '0 0 8px', lineHeight: 1.55 }}>
+          已扫描 4,283 封邮件 · 没有需要立即回复或处理的事情。<br/>
+          下面是最近几条低优先级摘要，供你参考。
+        </p>
+      </div>
+
+      <div style={{
+        padding: '0 24px 12px',
+        fontSize: 11, fontWeight: 600, color: tbStyles.textMuted,
+        textTransform: 'uppercase', letterSpacing: '.04em',
+      }}>
+        最近 · 低优先级摘要
+      </div>
+
+      <div style={{ flex: 1, overflow: 'auto', padding: '0 24px 20px' }}>
+        {lowItems.map((it, i) => (
+          <div key={it.id} style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '12px 14px',
+            background: '#FBFBFC',
+            border: `1px solid ${tbStyles.borderSoft}`,
+            borderRadius: 8,
+            marginBottom: 8,
+          }}>
+            <Avatar char={it.avatar} color={it.avatarColor} size={28} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 500, color: tbStyles.text }}>{it.title}</div>
+              <div style={{ fontSize: 11, color: tbStyles.textMuted, marginTop: 1 }}>
+                {it.contact} · {it.summary.slice(0, 60)}…
+              </div>
+            </div>
+            <PriorityPill priority={it.priority} />
+            <button style={{ ...btnStyle('ghost-subtle'), padding: '4px 8px', fontSize: 11 }}>
+              已知晓
+            </button>
+          </div>
+        ))}
+
+        <div style={{ textAlign: 'center', marginTop: 16 }}>
+          <button style={{ ...btnStyle('ghost'), padding: '6px 14px', fontSize: 12 }}>
+            查看全部低优先级（17 项）
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 渲染：每个 frame 一个 React root
+// ============================================================
+function FrameApp({ tabSubtitle, statusMessage, children }) {
+  return (
+    <ThunderbirdShell tabSubtitle={tabSubtitle} statusMessage={statusMessage}>
+      {children}
+    </ThunderbirdShell>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root-v1')).render(
+  <FrameApp tabSubtitle="AI 助手 · 需要登录" statusMessage="未检测到已登录的 AI 命令行">
+    <CLIPickerC />
+  </FrameApp>
+);
+
+ReactDOM.createRoot(document.getElementById('root-v2')).render(
+  <FrameApp tabSubtitle="AI 助手 · 完善个人资料" statusMessage="自我介绍可帮助 AI 给出更贴近你语气的回复">
+    <IntroSetupScreen />
+  </FrameApp>
+);
+
+ReactDOM.createRoot(document.getElementById('root-v3')).render(
+  <FrameApp tabSubtitle="AI 助手 · 分析中" statusMessage="ContactPulse · 已处理 148/312 联系人">
+    <LoadingA />
+  </FrameApp>
+);
+
+ReactDOM.createRoot(document.getElementById('root-v4')).render(
+  <FrameApp tabSubtitle="AI 助手 · 今日简报" statusMessage="✓ 7 项 · 来自 312 联系人 · 14:03 完成">
+    <BriefingC />
+  </FrameApp>
+);
+
+ReactDOM.createRoot(document.getElementById('root-v5')).render(
+  <FrameApp tabSubtitle="AI 助手 · 今日简报" statusMessage="✓ 0 项 · 来自 312 联系人 · 14:03 完成">
+    <BriefingEmpty />
+  </FrameApp>
+);
+
+</script>
+
+<script>
+  document.querySelectorAll('.demo-tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.demo-tab').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      document.getElementById(t.dataset.view).classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>
