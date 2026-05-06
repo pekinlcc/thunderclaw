@@ -12,6 +12,7 @@ import {
 } from './store';
 import { openComposeFor } from './compose';
 import { getEmailPreview, markReadAndArchive, openOriginal } from './messages';
+import { generateReply } from './writer';
 import type { UIRequest } from '../shared/protocol';
 
 declare const messenger: typeof browser & {
@@ -146,13 +147,13 @@ browser.runtime.onMessage.addListener(async (raw: unknown) => {
         };
       }
     }
-    case 'ui:open-compose': {
+    case 'ui:generate-reply': {
       const state = await getState();
       const item = state.briefing.find((i) => i.id === req.itemId);
       if (!item) return { ok: false, error: 'item not found' };
       try {
-        await openComposeFor(item, req.replyAll);
-        return { ok: true };
+        const text = await generateReply({ item, actionLabel: req.actionLabel });
+        return { ok: true, text };
       } catch (err) {
         return {
           ok: false,
@@ -160,11 +161,23 @@ browser.runtime.onMessage.addListener(async (raw: unknown) => {
         };
       }
     }
-    case 'ui:copy-reply': {
+    case 'ui:open-compose': {
       const state = await getState();
       const item = state.briefing.find((i) => i.id === req.itemId);
-      if (!item || !item.suggestedReply) return { ok: false, error: 'no reply' };
-      return { ok: true, text: item.suggestedReply };
+      if (!item) return { ok: false, error: 'item not found' };
+      try {
+        await openComposeFor({
+          item,
+          replyText: req.replyText,
+          replyAll: req.replyAll,
+        });
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
     }
     default:
       return { ok: false, error: 'unknown ui request' };

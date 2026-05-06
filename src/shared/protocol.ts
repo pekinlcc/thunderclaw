@@ -42,8 +42,8 @@ export type UIRequest =
   | { kind: 'ui:scan-more' }
   | { kind: 'ui:acknowledge'; itemId: string }
   | { kind: 'ui:mute-thread'; itemId: string }
-  | { kind: 'ui:open-compose'; itemId: string; replyAll?: boolean }
-  | { kind: 'ui:copy-reply'; itemId: string }
+  | { kind: 'ui:generate-reply'; itemId: string; actionLabel: string }
+  | { kind: 'ui:open-compose'; itemId: string; replyText: string; replyAll?: boolean }
   | { kind: 'ui:get-email-preview'; messageId: number }
   | { kind: 'ui:open-original'; messageId: number };
 
@@ -64,6 +64,12 @@ export type Pipeline =
   | { phase: 'done'; finishedAt: number }
   | { phase: 'error'; message: string };
 
+// 一个建议动作。label 是按钮上的中文短语；点了之后这条 label 喂给 writer
+// agent 让它实际写出回复文本。
+export type SuggestedAction = {
+  label: string;
+};
+
 export type BriefingItem = {
   id: string;
   contactName: string;
@@ -75,7 +81,8 @@ export type BriefingItem = {
   priority: 'high' | 'medium' | 'low';
   deadline: string | null;
   actionType: 'reply' | 'acknowledge' | 'none';
-  suggestedReply: string | null;
+  // actionType=reply 时给 2-4 个候选动作；acknowledge / none 时为空数组
+  suggestedActions: SuggestedAction[];
   reason: string;
   emailIds: number[];
   threadKey: string;

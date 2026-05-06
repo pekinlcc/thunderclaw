@@ -86,13 +86,20 @@ async function buildPulsePrompt(
       "priority": "high" | "medium" | "low",
       "deadline": "可选的截止时间，比如 '12/05 截止'，没有就 null",
       "actionType": "reply" | "acknowledge" | "none",
-      "suggestedReply": "如果 actionType=reply，给一段建议回复正文，否则 null",
+      "suggestedActions": [
+        {"label": "10-20 字的中文动作描述，例如 '回复确认本周末前完成'"}
+      ],
       "reason": "AI 判断依据，不超过 100 字",
       "thread_key": "对应的 thread_key 字段",
       "message_ids": [对应的 message_id 数组]
     }
   ]
 }
+
+suggestedActions 规则：
+- 如果 actionType=reply，给 2-4 个候选动作，覆盖不同合理处理方向（确认接受 / 婉拒 / 反问 / 推迟 等）。第一个是最推荐的。
+- 如果 actionType=acknowledge 或 none，suggestedActions 为 []。
+- label 要简洁，是按钮文字，不是完整回复。**不要写完整邮件正文**——那是另一个 agent 负责的事。
 
 如果没有任何重要事项（包括所有邮件都已被用户处理过），输出 {"items": []}。`,
   );
@@ -106,7 +113,7 @@ type PulseRaw = {
     priority: 'high' | 'medium' | 'low';
     deadline?: string | null;
     actionType?: 'reply' | 'acknowledge' | 'none';
-    suggestedReply?: string | null;
+    suggestedActions?: Array<{ label?: string } | string>;
     reason?: string;
     thread_key?: string;
     message_ids?: number[];
@@ -172,6 +179,15 @@ export async function runPulse(
       const itemId = `${b.key}::${item.thread_key || item.title}`;
       if (acknowledged.has(itemId) || muted.has(itemId)) continue;
       const av = avatarFor(b.displayName);
+      // 容错：actions 可以是字符串数组或 {label} 对象数组
+      const rawActions = item.suggestedActions ?? [];
+      const suggestedActions = rawActions
+        .map((a) => {
+          if (typeof a === 'string') return { label: a };
+          if (a && typeof a.label === 'string') return { label: a.label };
+          return null;
+        })
+        .filter((a): a is { label: string } => !!a && a.label.trim().length > 0);
       const built: BriefingItem = {
         id: itemId,
         contactName: b.displayName,
@@ -183,7 +199,7 @@ export async function runPulse(
         priority: item.priority,
         deadline: item.deadline ?? null,
         actionType: item.actionType ?? 'none',
-        suggestedReply: item.suggestedReply ?? null,
+        suggestedActions,
         reason: item.reason ?? '',
         emailIds: item.message_ids ?? [],
         threadKey: item.thread_key ?? '',

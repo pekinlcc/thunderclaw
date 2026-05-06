@@ -14,10 +14,19 @@ export const ui = {
   scanMore: () => send({ kind: 'ui:scan-more' }),
   acknowledge: (itemId: string) => send({ kind: 'ui:acknowledge', itemId }),
   muteThread: (itemId: string) => send({ kind: 'ui:mute-thread', itemId }),
-  openCompose: (itemId: string, replyAll = false) =>
-    send({ kind: 'ui:open-compose', itemId, replyAll }),
-  copyReply: (itemId: string) =>
-    send<{ ok: boolean; text?: string; error?: string }>({ kind: 'ui:copy-reply', itemId }),
+  openCompose: (itemId: string, replyText: string, replyAll = false) =>
+    send<{ ok: boolean; error?: string }>({
+      kind: 'ui:open-compose',
+      itemId,
+      replyText,
+      replyAll,
+    }),
+  generateReply: (itemId: string, actionLabel: string) =>
+    send<{ ok: boolean; text?: string; error?: string }>({
+      kind: 'ui:generate-reply',
+      itemId,
+      actionLabel,
+    }),
   getEmailPreview: (messageId: number) =>
     send<{ ok: boolean; preview?: EmailPreview; error?: string }>({
       kind: 'ui:get-email-preview',
