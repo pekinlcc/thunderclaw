@@ -4,6 +4,77 @@ import { SparkleIcon } from '../icons';
 import type { BriefingItem, EmailPreview, Pipeline } from '../../shared/protocol';
 import { ui } from '../messaging';
 
+// ─── Toast ────────────────────────────────────────────────────────
+type ToastKind = 'success' | 'warning' | 'error';
+type Toast = { id: number; kind: ToastKind; text: string };
+
+function ToastView({
+  toast,
+  onClose,
+}: {
+  toast: Toast;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 3500);
+    return () => clearTimeout(t);
+  }, [toast.id, onClose]);
+
+  const palette =
+    toast.kind === 'success'
+      ? { bg: '#1F3A2A', fg: '#A7E3B6', icon: '✓' }
+      : toast.kind === 'warning'
+      ? { bg: '#3A2D1F', fg: '#F0C97A', icon: '⚠' }
+      : { bg: '#3A1F1F', fg: '#F0A7A7', icon: '✗' };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        bottom: 24,
+        right: 24,
+        zIndex: 1000,
+        background: palette.bg,
+        color: palette.fg,
+        borderRadius: 8,
+        padding: '10px 14px',
+        boxShadow: '0 6px 20px rgba(0,0,0,0.18)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        maxWidth: 460,
+        fontSize: 12.5,
+        fontFamily: tbStyles.font,
+        animation: 'tcToastIn 180ms ease-out',
+      }}
+    >
+      <span style={{ fontSize: 14, lineHeight: 1, flexShrink: 0 }}>{palette.icon}</span>
+      <span style={{ flex: 1, lineHeight: 1.5 }}>{toast.text}</span>
+      <button
+        onClick={onClose}
+        aria-label="关闭"
+        style={{
+          background: 'transparent',
+          color: palette.fg,
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: 14,
+          padding: '0 4px',
+          opacity: 0.7,
+        }}
+      >
+        ×
+      </button>
+      <style>{`
+        @keyframes tcToastIn {
+          from { transform: translateY(8px); opacity: 0; }
+          to   { transform: translateY(0); opacity: 1; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 function WhatHappenedSection({ item }: { item: BriefingItem }) {
   const [expanded, setExpanded] = useState(false);
   const [preview, setPreview] = useState<EmailPreview | null>(null);
@@ -341,8 +412,13 @@ export function BriefingScreen({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(items[0]?.id ?? null);
   const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<Toast | null>(null);
   const item = items.find((i) => i.id === selectedId) ?? items[0] ?? null;
   const isAnalyzing = pipeline.phase === 'pulse' || pipeline.phase === 'briefing';
+
+  function showToast(kind: ToastKind, text: string) {
+    setToast({ id: Date.now(), kind, text });
+  }
 
   if (!item) {
     // 没卡片：分析中显示 loading 文案，否则显示空态
@@ -428,7 +504,24 @@ export function BriefingScreen({
     if (!item) return;
     setBusy(true);
     try {
-      await ui.acknowledge(item.id);
+      const res = await ui.acknowledge(item.id);
+      const a = res.archive;
+      if (!a) {
+        // 没邮件 ID 关联，单纯标记 dismissed
+        showToast('success', '已从简报移除');
+      } else if (a.errors.length === 0) {
+        showToast(
+          'success',
+          `已标为已读 · 归档 ${a.archived} 封${a.marked !== a.archived ? `（标读 ${a.marked} 封）` : ''}`,
+        );
+      } else if (a.archived === 0) {
+        showToast('warning', `已标读 ${a.marked} 封，但归档失败：${a.errors[0]}`);
+      } else {
+        showToast(
+          'warning',
+          `归档了 ${a.archived} 封，${a.errors.length} 封出错（${a.errors[0]}）`,
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -439,6 +532,7 @@ export function BriefingScreen({
     setBusy(true);
     try {
       await ui.muteThread(item.id);
+      showToast('success', '已压制此 thread · 不会再提示');
     } finally {
       setBusy(false);
     }
@@ -482,7 +576,10 @@ export function BriefingScreen({
     setBusy(true);
     try {
       const res = await ui.openCompose(item.id, generated.text);
-      if (!res.ok) console.warn('openCompose:', res.error);
+      if (!res.ok) {
+        showToast('error', `打开撰写窗口失败：${res.error || '未知错误'}`);
+      }
+      // 成功不弹 toast——TB 会真的开撰写窗口，那就是反馈
     } finally {
       setBusy(false);
     }
@@ -492,7 +589,9 @@ export function BriefingScreen({
     if (!generated) return;
     try {
       await navigator.clipboard.writeText(generated.text);
+      showToast('success', '已复制到剪贴板');
     } catch (err) {
+      showToast('error', `复制失败：${err instanceof Error ? err.message : String(err)}`);
       console.warn('clipboard:', err);
     }
   }
@@ -923,6 +1022,7 @@ export function BriefingScreen({
           </button>
         </div>
       )}
+      {toast && <ToastView toast={toast} onClose={() => setToast(null)} />}
     </div>
   );
 }

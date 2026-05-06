@@ -12,8 +12,17 @@ export const ui = {
   saveIntro: (intro: string) => send({ kind: 'ui:save-intro', intro }),
   startPipeline: () => send({ kind: 'ui:start-pipeline' }),
   scanMore: () => send({ kind: 'ui:scan-more' }),
-  acknowledge: (itemId: string) => send({ kind: 'ui:acknowledge', itemId }),
-  muteThread: (itemId: string) => send({ kind: 'ui:mute-thread', itemId }),
+  acknowledge: (itemId: string) =>
+    send<{
+      ok: boolean;
+      archive?: {
+        marked: number;
+        archived: number;
+        errors: string[];
+      } | null;
+    }>({ kind: 'ui:acknowledge', itemId }),
+  muteThread: (itemId: string) =>
+    send<{ ok: boolean }>({ kind: 'ui:mute-thread', itemId }),
   openCompose: (itemId: string, replyText: string, replyAll = false) =>
     send<{ ok: boolean; error?: string }>({
       kind: 'ui:open-compose',
