@@ -11,6 +11,7 @@ import {
   setState,
 } from './store';
 import { openComposeFor } from './compose';
+import { getEmailPreview, markReadAndArchive, openOriginal } from './messages';
 import type { UIRequest } from '../shared/protocol';
 
 declare const messenger: typeof browser & {
@@ -103,12 +104,47 @@ browser.runtime.onMessage.addListener(async (raw: unknown) => {
     case 'ui:scan-more':
       scanMore();
       return { ok: true };
-    case 'ui:acknowledge':
+    case 'ui:acknowledge': {
+      // 用户点 "我已知晓"：标记 item 已处理 + 把对应原邮件标已读 + 归档
+      const cur = await getState();
+      const item = cur.briefing.find((i) => i.id === req.itemId);
+      const ids = item?.emailIds ?? [];
+      let archiveResult: Awaited<ReturnType<typeof markReadAndArchive>> | null = null;
+      if (ids.length > 0) {
+        archiveResult = await markReadAndArchive(ids);
+        if (archiveResult.errors.length) {
+          console.warn('[ThunderClaw] ack archive errors:', archiveResult.errors);
+        }
+      }
       await acknowledge(req.itemId);
-      return { ok: true };
+      return { ok: true, archive: archiveResult };
+    }
     case 'ui:mute-thread':
       await muteThread(req.itemId);
       return { ok: true };
+    case 'ui:get-email-preview': {
+      try {
+        const preview = await getEmailPreview(req.messageId);
+        if (!preview) return { ok: false, error: 'preview unavailable' };
+        return { ok: true, preview };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+    case 'ui:open-original': {
+      try {
+        await openOriginal(req.messageId);
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
     case 'ui:open-compose': {
       const state = await getState();
       const item = state.briefing.find((i) => i.id === req.itemId);

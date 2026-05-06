@@ -43,7 +43,18 @@ export type UIRequest =
   | { kind: 'ui:acknowledge'; itemId: string }
   | { kind: 'ui:mute-thread'; itemId: string }
   | { kind: 'ui:open-compose'; itemId: string; replyAll?: boolean }
-  | { kind: 'ui:copy-reply'; itemId: string };
+  | { kind: 'ui:copy-reply'; itemId: string }
+  | { kind: 'ui:get-email-preview'; messageId: number }
+  | { kind: 'ui:open-original'; messageId: number };
+
+export type EmailPreview = {
+  messageId: number;
+  subject: string;
+  from: string;
+  date: string; // ISO
+  bodyText: string; // 纯文本，已截断
+  bodyTruncated: boolean;
+};
 
 export type Pipeline =
   | { phase: 'idle' }

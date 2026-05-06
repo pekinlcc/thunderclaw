@@ -65,6 +65,22 @@ declare namespace browser {
     function list(folderId: string | accounts.Folder): Promise<MessageList>;
     function continueList(listId: string): Promise<MessageList>;
     function getFull(messageId: number): Promise<MessagePart>;
+    function get(messageId: number): Promise<MessageHeader>;
+    function update(
+      messageId: number,
+      patch: { read?: boolean; flagged?: boolean; junk?: boolean; tags?: string[] },
+    ): Promise<void>;
+    function archive(messageIds: number[]): Promise<void>;
+  }
+
+  namespace mailTabs {
+    type MailTab = { id: number; active: boolean };
+    function query(filter?: { active?: boolean }): Promise<MailTab[]>;
+    function setSelectedMessages(tabId: number, messageIds: number[]): Promise<void>;
+  }
+
+  namespace messageDisplay {
+    function open(props: { messageId: number }): Promise<unknown>;
   }
 
   namespace compose {
@@ -75,6 +91,7 @@ declare namespace browser {
       bcc?: string | string[];
       subject?: string;
       body?: string;
+      plainTextBody?: string;
       isPlainText?: boolean;
     };
     function beginNew(details?: ComposeDetails): Promise<unknown>;

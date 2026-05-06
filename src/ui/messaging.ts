@@ -1,4 +1,4 @@
-import type { AppState, ProbeResult, UIRequest } from '../shared/protocol';
+import type { AppState, EmailPreview, ProbeResult, UIRequest } from '../shared/protocol';
 
 async function send<T>(msg: UIRequest): Promise<T> {
   return (await browser.runtime.sendMessage(msg)) as T;
@@ -18,6 +18,13 @@ export const ui = {
     send({ kind: 'ui:open-compose', itemId, replyAll }),
   copyReply: (itemId: string) =>
     send<{ ok: boolean; text?: string; error?: string }>({ kind: 'ui:copy-reply', itemId }),
+  getEmailPreview: (messageId: number) =>
+    send<{ ok: boolean; preview?: EmailPreview; error?: string }>({
+      kind: 'ui:get-email-preview',
+      messageId,
+    }),
+  openOriginal: (messageId: number) =>
+    send<{ ok: boolean; error?: string }>({ kind: 'ui:open-original', messageId }),
 };
 
 export function onBgStateChange(fn: () => void) {

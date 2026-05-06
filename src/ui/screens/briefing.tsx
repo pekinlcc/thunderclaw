@@ -1,8 +1,189 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { tbStyles } from '../styles';
 import { SparkleIcon } from '../icons';
-import type { BriefingItem, Pipeline } from '../../shared/protocol';
+import type { BriefingItem, EmailPreview, Pipeline } from '../../shared/protocol';
 import { ui } from '../messaging';
+
+function WhatHappenedSection({ item }: { item: BriefingItem }) {
+  const [expanded, setExpanded] = useState(false);
+  const [preview, setPreview] = useState<EmailPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // 切换 item 时重置
+  useEffect(() => {
+    setExpanded(false);
+    setPreview(null);
+    setError(null);
+  }, [item.id]);
+
+  const messageId = item.emailIds[0];
+  const canExpand = typeof messageId === 'number';
+
+  async function toggle() {
+    if (!canExpand) return;
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    setExpanded(true);
+    if (preview || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await ui.getEmailPreview(messageId!);
+      if (res.ok && res.preview) setPreview(res.preview);
+      else setError(res.error || '加载失败');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function openOriginal() {
+    if (!canExpand) return;
+    const res = await ui.openOriginal(messageId!);
+    if (!res.ok) console.warn('openOriginal:', res.error);
+  }
+
+  return (
+    <div
+      style={{
+        background: '#FBFBFC',
+        border: `1px solid ${tbStyles.borderSoft}`,
+        borderRadius: 8,
+        marginBottom: 14,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        onClick={toggle}
+        style={{
+          padding: '14px 16px',
+          cursor: canExpand ? 'pointer' : 'default',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: tbStyles.textMuted,
+              textTransform: 'uppercase',
+              letterSpacing: '.04em',
+              marginBottom: 8,
+            }}
+          >
+            发生了什么
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.6 }}>{item.summary}</div>
+        </div>
+        {canExpand && (
+          <div
+            style={{
+              fontSize: 11,
+              color: tbStyles.blue,
+              flexShrink: 0,
+              padding: '4px 8px',
+              borderRadius: 4,
+              background: expanded ? tbStyles.blueLight : 'transparent',
+            }}
+          >
+            {expanded ? '收起 ▲' : '查看原邮件 ▼'}
+          </div>
+        )}
+      </div>
+
+      {expanded && (
+        <div
+          style={{
+            borderTop: `1px solid ${tbStyles.borderSoft}`,
+            background: '#FFF',
+            padding: '14px 16px',
+            fontSize: 12.5,
+            color: tbStyles.text,
+            lineHeight: 1.6,
+          }}
+        >
+          {loading && (
+            <div style={{ color: tbStyles.textMuted, fontSize: 12 }}>正在读取邮件…</div>
+          )}
+          {error && (
+            <div style={{ color: '#C44A2C', fontSize: 12 }}>读取失败：{error}</div>
+          )}
+          {preview && (
+            <>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: tbStyles.textMuted,
+                  marginBottom: 8,
+                  display: 'grid',
+                  gridTemplateColumns: '52px 1fr',
+                  rowGap: 3,
+                }}
+              >
+                <span style={{ color: tbStyles.textFaint }}>主题</span>
+                <span style={{ color: tbStyles.text, fontWeight: 500 }}>{preview.subject}</span>
+                <span style={{ color: tbStyles.textFaint }}>来自</span>
+                <span>{preview.from}</span>
+                <span style={{ color: tbStyles.textFaint }}>时间</span>
+                <span>{new Date(preview.date).toLocaleString()}</span>
+              </div>
+              <div
+                style={{
+                  borderTop: `1px solid ${tbStyles.borderSoft}`,
+                  paddingTop: 10,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontFamily: 'inherit',
+                  maxHeight: 320,
+                  overflow: 'auto',
+                }}
+              >
+                {preview.bodyText || <span style={{ color: tbStyles.textFaint }}>(正文为空)</span>}
+              </div>
+              <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={openOriginal}
+                  style={{
+                    fontSize: 11.5,
+                    padding: '5px 12px',
+                    background: tbStyles.blue,
+                    color: '#FFF',
+                    border: 'none',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  在 Thunderbird 中打开 →
+                </button>
+              </div>
+              {item.emailIds.length > 1 && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: tbStyles.textMuted,
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTop: `1px dashed ${tbStyles.borderSoft}`,
+                  }}
+                >
+                  此事项关联 {item.emailIds.length} 封邮件，这里只显示最近一封。点 "在 Thunderbird 中打开" 查看全部。
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function PriorityPill({ priority }: { priority: BriefingItem['priority'] }) {
   const map = {
@@ -462,29 +643,7 @@ export function BriefingScreen({
             </div>
           )}
 
-          <div
-            style={{
-              background: '#FBFBFC',
-              border: `1px solid ${tbStyles.borderSoft}`,
-              borderRadius: 8,
-              padding: '14px 16px',
-              marginBottom: 14,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: tbStyles.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '.04em',
-                marginBottom: 8,
-              }}
-            >
-              发生了什么
-            </div>
-            <div style={{ fontSize: 13, lineHeight: 1.6 }}>{item.summary}</div>
-          </div>
+          <WhatHappenedSection item={item} />
 
           {item.suggestedReply ? (
             <div
