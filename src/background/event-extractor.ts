@@ -101,7 +101,7 @@ export async function extractEvent({
   const out = await nativeHost.callClaude({
     prompt,
     systemPrompt: EVENT_SYSTEM,
-    timeoutMs: 120000,
+    timeoutMs: 60000,
   });
   return parseJSON<ExtractedEvent>(out.text);
 }
@@ -118,7 +118,7 @@ export async function extractTask({
   const out = await nativeHost.callClaude({
     prompt,
     systemPrompt: TASK_SYSTEM,
-    timeoutMs: 120000,
+    timeoutMs: 60000,
   });
   return parseJSON<ExtractedTask>(out.text);
 }

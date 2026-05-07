@@ -441,6 +441,7 @@ function ActionsBox({
     actionIdx: number;
     results: StepResult[];
     error: string | null;
+    done: boolean;
   } | null;
   generated: { detail: string; text: string } | null;
   busy: boolean;
@@ -538,9 +539,9 @@ function ActionsBox({
             <IntentButton
               key={`${action.label}-${i}`}
               action={action}
-              isRunning={runState?.actionIdx === i}
+              isRunning={runState?.actionIdx === i && !runState.done}
               disabled={
-                (runState !== null && runState.actionIdx !== i) ||
+                (runState !== null && !runState.done && runState.actionIdx !== i) ||
                 busy ||
                 expandedActionIdx !== null
               }
@@ -1091,10 +1092,12 @@ export function BriefingScreen({
 
   // ─── intent 执行状态 ──────────────────────────────
   // 用户点过哪一组 intent，每一步的状态如何
+  // done=true 表示这次 run 已经跑完（成功或失败），结果还展示着但按钮不再"执行中"
   const [runState, setRunState] = useState<{
     actionIdx: number;
     results: StepResult[];
     error: string | null;
+    done: boolean;
   } | null>(null);
   // reply 步骤生成的回复正文（已审稿区域）
   const [generated, setGenerated] = useState<{
@@ -1149,7 +1152,7 @@ export function BriefingScreen({
       detail: s.detail,
       state: 'pending',
     }));
-    setRunState({ actionIdx, results: initialResults, error: null });
+    setRunState({ actionIdx, results: initialResults, error: null, done: false });
     setGenerated(null);
     setBusy(true);
 
@@ -1224,6 +1227,8 @@ export function BriefingScreen({
       }
     } finally {
       setBusy(false);
+      // 标记本次 run 已完成（成功或失败），按钮恢复，结果面板还显示
+      setRunState((rs) => (rs ? { ...rs, done: true } : rs));
     }
   }
 

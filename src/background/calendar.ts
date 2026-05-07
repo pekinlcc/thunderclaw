@@ -11,13 +11,15 @@ import type {
 // 是否能用 native calendar API（TB 140 ESR 起部分可用）
 function calendarApiAvailable(): boolean {
   const cal = (browser as any).calendar;
-  return !!(
+  const ok = !!(
     cal &&
     cal.calendars &&
     typeof cal.calendars.query === 'function' &&
     cal.items &&
     typeof cal.items.create === 'function'
   );
+  console.log('[ThunderClaw][calendar] native API available?', ok);
+  return ok;
 }
 
 function fmtICSDate(iso: string | null, allDay: boolean): string {
@@ -42,6 +44,7 @@ const ICS_SUBFOLDER = 'ThunderClaw';
 const CLEANUP_DELAY_MS = 10_000;
 
 async function downloadAndOpenICS(filename: string, ics: string): Promise<void> {
+  console.log('[ThunderClaw][calendar] fallback: downloading .ics', filename);
   const blob = new Blob([ics], { type: 'text/calendar' });
   const url = URL.createObjectURL(blob);
   const downloadId = await browser.downloads.download({
@@ -49,6 +52,7 @@ async function downloadAndOpenICS(filename: string, ics: string): Promise<void> 
     filename: `${ICS_SUBFOLDER}/${filename}`,
     saveAs: false,
   });
+  console.log('[ThunderClaw][calendar] downloadId =', downloadId);
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 
   // 让 TB 把文件读进内存触发导入对话框
