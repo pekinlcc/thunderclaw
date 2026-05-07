@@ -202,10 +202,10 @@ export async function callCodex({ prompt, systemPrompt, timeoutMs = 180000 }) {
 }
 
 // 统一入口：根据 engine 路由到对应 CLI。
+// 严格匹配——上层（扩展）已经按用户在 intro 里选的 cli 决定了 engine，
+// 这里悄悄回退到别的 CLI 只会让"UI 选了 Codex 实际跑了 Claude"这种 bug 更难诊断。
 export function callLLM({ engine, prompt, systemPrompt, timeoutMs }) {
-  if (engine === 'codex') {
-    return callCodex({ prompt, systemPrompt, timeoutMs });
-  }
-  // 默认 / 未指定 → claude
-  return callClaude({ prompt, systemPrompt, timeoutMs });
+  if (engine === 'claude') return callClaude({ prompt, systemPrompt, timeoutMs });
+  if (engine === 'codex') return callCodex({ prompt, systemPrompt, timeoutMs });
+  throw new Error(`unknown engine: ${engine}`);
 }

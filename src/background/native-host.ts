@@ -73,10 +73,14 @@ class NativeHost {
   }
 
   // 根据用户在 UI 里选的 CLI 引擎路由到对应后端。
-  // selectedCli 为 null（用户没选过）时兜底走 claude。
+  // 整个 pipeline 都被 introCompleted 门挡着，到这里 selectedCli 不该是 null；
+  // 真到了就抛——比悄悄回退到 claude 安全（用户选了 Codex 却走了 Claude 是隐蔽 bug）。
   async callLLM(params: ClaudeCallParams) {
     const state = await getState();
-    const engine = state.selectedCli ?? 'claude';
+    const engine = state.selectedCli;
+    if (engine !== 'claude' && engine !== 'codex') {
+      throw new Error('No CLI engine selected — finish the intro first');
+    }
     return this.call<ClaudeCallResult>({
       method: 'llm-call',
       params: { ...params, engine },
