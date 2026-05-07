@@ -5,7 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/pekinlcc/thunderclaw/main/scripts/install-mac.sh | bash
 #
 # 默认装最新 release。要锁定某个版本：
-#   curl -fsSL .../install-mac.sh | bash -s -- 0.1.18
+#   curl -fsSL .../install-mac.sh | bash -s -- 0.1.20
 #
 # 干的事：
 #   1. 装 native host 到 ~/Library/Application Support/ThunderClaw/
@@ -16,7 +16,11 @@
 #
 # 卸载：bash -s -- uninstall
 
-set -euo pipefail
+# 注意：这里只用 -e + pipefail，不用 -u。
+# macOS 自带 bash 3.2.57（2007 年）—— `local var="value"` 在 piped-bash 上下文里
+# 时不时不绑定，配合 set -u 会触发误报 unbound variable。下面所有 local 都拆成
+# 两行 declare-then-assign，对 bash 3.2 更稳。
+set -eo pipefail
 
 REPO="pekinlcc/thunderclaw"
 EXT_ID="thunderclaw@pekinlcc.dev"
@@ -37,7 +41,9 @@ ok()   { printf "\033[32m✓\033[0m %s\n"  "$*"; }
 step() { printf "\n\033[1m==>\033[0m %s\n" "$*"; }
 
 require_cmd() {
-  local cmd="$1" hint="$2"
+  local cmd hint
+  cmd="$1"
+  hint="$2"
   if ! command -v "$cmd" >/dev/null 2>&1; then
     err "缺少 '$cmd'：$hint"
     exit 1
@@ -45,7 +51,8 @@ require_cmd() {
 }
 
 resolve_version() {
-  local v="$1"
+  local v
+  v="$1"
   if [[ "$v" == "latest" || -z "$v" ]]; then
     curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
       | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1
@@ -54,43 +61,42 @@ resolve_version() {
   fi
 }
 
-# 解析 profiles.ini，返回 default profile 的绝对路径
+# 解析 profiles.ini，返回 default profile 的相对 Path（不含 TB_PROFILES_DIR 前缀）。
+# bash 3.2 兼容：避免 local var="$(...)" 这种在 -u 下时常失败的写法。
 default_profile_path() {
   if [[ ! -f "$PROFILES_INI" ]]; then
     err "找不到 $PROFILES_INI——你需要至少启动一次 Thunderbird 让它建出 profile，然后再跑本脚本"
     exit 1
   fi
-  # awk：先找 [Install*] 段里的 Default= 路径，没有的话退到 [Profile*] 段里 Default=1 的，
-  # 再退到第一个 [Profile*] 段的 Path=
+
   local rel
+  rel=""
+  # 优先：[Install*] 段里的 Default=
   rel=$(awk '
-    /^\[Install/ { in_install=1; in_profile=0; next }
-    /^\[Profile/ { in_profile=1; in_install=0; def=0; path=""; next }
-    /^\[/        { in_install=0; in_profile=0 }
-    in_install   { if ($0 ~ /^Default=/) { sub(/^Default=/,""); install_default=$0 } }
-    in_profile {
-      if ($0 ~ /^Path=/)    { sub(/^Path=/,""); path=$0 }
-      if ($0 ~ /^Default=1/) { def=1 }
-    }
-    END {
-      if (install_default != "") { print install_default; exit }
-      # 这里没 install_default，就在第二轮里找 Default=1，从 awk 单遍取不到，所以这部分由调用方兜底
-    }
+    /^\[Install/ { in_install=1; next }
+    /^\[/        { in_install=0 }
+    in_install   { if ($0 ~ /^Default=/) { sub(/^Default=/,""); print; exit } }
   ' "$PROFILES_INI")
   if [[ -n "$rel" ]]; then
-    echo "$TB_PROFILES_DIR/$rel"; return
+    echo "$TB_PROFILES_DIR/$rel"
+    return
   fi
-  # 兜底：扫一遍所有 [Profile*]，取 Default=1 的，没有就第一个
+
+  # 其次：[Profile*] 段里 Default=1 的
   rel=$(awk '
     /^\[Profile/  { p=""; d=0; in_p=1; next }
     /^\[/         { if (in_p && d==1) { print p; in_p=0; exit } in_p=0 }
-    in_p && /^Path=/    { sub(/^Path=/,""); p=$0 }
+    in_p && /^Path=/     { sub(/^Path=/,""); p=$0 }
     in_p && /^Default=1/ { d=1 }
     END           { if (in_p && d==1) print p }
   ' "$PROFILES_INI")
-  if [[ -z "$rel" ]]; then
-    rel=$(awk '/^\[Profile/{f=1; next} /^\[/{f=0} f && /^Path=/{sub(/^Path=/,""); print; exit}' "$PROFILES_INI")
+  if [[ -n "$rel" ]]; then
+    echo "$TB_PROFILES_DIR/$rel"
+    return
   fi
+
+  # 兜底：第一个 [Profile*] 段
+  rel=$(awk '/^\[Profile/{f=1; next} /^\[/{f=0} f && /^Path=/{sub(/^Path=/,""); print; exit}' "$PROFILES_INI")
   if [[ -z "$rel" ]]; then
     err "解析 $PROFILES_INI 失败——找不到任何 profile"
     exit 1
@@ -98,8 +104,9 @@ default_profile_path() {
   echo "$TB_PROFILES_DIR/$rel"
 }
 
-install() {
-  local version="$1"
+install_main() {
+  local version
+  version="$1"
   step "Mac 一键装 ThunderClaw v$version"
 
   # ─── prerequisites ───────────────────────────────
@@ -113,12 +120,14 @@ install() {
   fi
 
   # ─── tmp work dir ────────────────────────────────
-  local tmp; tmp=$(mktemp -d -t thunderclaw)
+  local tmp
+  tmp=$(mktemp -d -t thunderclaw)
   trap "rm -rf '$tmp'" EXIT
 
   # ─── 1) native host tarball ──────────────────────
   step "下载并安装 native host"
-  local host_url="https://github.com/$REPO/releases/download/v$version/thunderclaw-native-host-v$version.tar.gz"
+  local host_url
+  host_url="https://github.com/$REPO/releases/download/v$version/thunderclaw-native-host-v$version.tar.gz"
   curl -fSL --progress-bar -o "$tmp/host.tar.gz" "$host_url" \
     || { err "下载 host tarball 失败：$host_url"; exit 1; }
   tar -xzf "$tmp/host.tar.gz" -C "$tmp"
@@ -126,13 +135,15 @@ install() {
 
   # ─── 2) XPI ───────────────────────────────────────
   step "下载 XPI"
-  local xpi="$tmp/thunderclaw-$version.xpi"
-  local xpi_url="https://github.com/$REPO/releases/download/v$version/thunderclaw-$version.xpi"
+  local xpi xpi_url
+  xpi="$tmp/thunderclaw-$version.xpi"
+  xpi_url="https://github.com/$REPO/releases/download/v$version/thunderclaw-$version.xpi"
   curl -fSL --progress-bar -o "$xpi" "$xpi_url" \
     || { err "下载 XPI 失败：$xpi_url"; exit 1; }
 
   # ─── 3) 把 XPI 丢进 TB 默认 profile 的 extensions/ ───
-  local profile_dir; profile_dir=$(default_profile_path)
+  local profile_dir
+  profile_dir=$(default_profile_path)
   step "目标 TB profile：$profile_dir"
   if [[ ! -d "$profile_dir" ]]; then
     err "profile 目录不存在：$profile_dir——是不是 TB 还没初始化？先启动一次 TB 再来"
@@ -144,16 +155,16 @@ install() {
 
   # ─── 4) user.js：自动启用 + 关签名校验 ───────────────
   # 这三条 pref 覆盖 TB 默认对未签名扩展的限制，让 sideload 装的 XPI 直接 enabled。
-  local user_js="$profile_dir/user.js"
-  local marker="// thunderclaw:auto-enable"
+  local user_js marker
+  user_js="$profile_dir/user.js"
+  marker="// thunderclaw:auto-enable"
   if ! grep -q "$marker" "$user_js" 2>/dev/null; then
     step "写 $user_js（自动启用 + 关签名校验）"
     {
-      echo ""
-      echo "$marker  # 由 install-mac.sh 写入"
-      echo 'user_pref("extensions.autoDisableScopes", 0);'
-      echo 'user_pref("extensions.enabledScopes", 15);'
-      echo 'user_pref("xpinstall.signatures.required", false);'
+      printf '\n%s  # 由 install-mac.sh 写入\n' "$marker"
+      printf 'user_pref("extensions.autoDisableScopes", 0);\n'
+      printf 'user_pref("extensions.enabledScopes", 15);\n'
+      printf 'user_pref("xpinstall.signatures.required", false);\n'
     } >> "$user_js"
     ok "已加入 user.js"
   else
@@ -162,34 +173,37 @@ install() {
 
   # ─── 5) 起 TB ───────────────────────────────────
   step "启动 Thunderbird"
-  # 先确保它没在跑——如果在跑，我们的 user.js 改动要重启才生效
+  # 先确保它没在跑——如果在跑，user.js 改动要重启才生效
   if pgrep -x thunderbird >/dev/null 2>&1; then
     echo "  Thunderbird 在运行——为应用 user.js 改动需要重启。先 osascript 让它退出："
     osascript -e 'tell application "Thunderbird" to quit' || true
     # 等它优雅退出
-    for _ in {1..10}; do
+    local i
+    i=0
+    while [[ $i -lt 10 ]]; do
       pgrep -x thunderbird >/dev/null 2>&1 || break
       sleep 0.5
+      i=$((i + 1))
     done
   fi
   open -a Thunderbird
-  ok "TB 已启动。如果右上角有红条，说明还有问题——把日志贴给 ThunderClaw 维护者"
+  ok "TB 已启动。如果看不到左侧 Spaces 栏的 'AI 助手' 图标，看一下 Tools → Add-ons 里 ThunderClaw 是不是 enabled"
 
   printf "\n\033[32m装完了。\033[0m 直接用就行：左侧 Spaces 栏点 'AI 助手' 图标。\n"
 }
 
-uninstall() {
+uninstall_main() {
   step "卸载 ThunderClaw"
-  # native host
   rm -rf "$LIB_DIR"
   rm -f "$WRAPPER"
+  local d
   for d in "${NMH_DIRS[@]}"; do
     rm -f "$d/thunderclaw.json"
   done
   ok "native host 已移除"
 
-  # XPI from every profile
   if [[ -f "$PROFILES_INI" ]]; then
+    local p
     while IFS= read -r p; do
       if [[ -n "$p" ]]; then
         rm -f "$TB_PROFILES_DIR/$p/extensions/$EXT_ID.xpi"
@@ -203,13 +217,13 @@ uninstall() {
 
 case "$ARG" in
   install|"")
-    install "$(resolve_version "${2:-latest}")"
+    install_main "$(resolve_version "${2:-latest}")"
     ;;
   uninstall|remove)
-    uninstall
+    uninstall_main
     ;;
   *)
-    # 没匹配，可能是用户直接传了 version
-    install "$(resolve_version "$ARG")"
+    # 没匹配 install/uninstall，按 version 处理（用户直接传了 0.1.20 之类的）
+    install_main "$(resolve_version "$ARG")"
     ;;
 esac
