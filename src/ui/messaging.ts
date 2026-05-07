@@ -65,6 +65,8 @@ export const ui = {
     }),
   openOriginal: (messageId: number) =>
     send<{ ok: boolean; error?: string }>({ kind: 'ui:open-original', messageId }),
+  setAutoRecompute: (enabled: boolean) =>
+    send<{ ok: boolean }>({ kind: 'ui:set-auto-recompute', enabled }),
 };
 
 export function onBgStateChange(fn: () => void) {

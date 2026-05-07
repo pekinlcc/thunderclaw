@@ -6,6 +6,7 @@ import {
   acknowledge,
   getState,
   muteThread,
+  setAutoRecompute,
   setCliStatus,
   setSelectedCli,
   setState,
@@ -16,6 +17,8 @@ import { getEmailPreview, markReadAndArchive, openOriginal } from './messages';
 import { generateReply } from './writer';
 import { extractEvent, extractTask } from './event-extractor';
 import { createCalendarEvent, createTask } from './calendar';
+import { enqueueNewMailSender } from './auto-recompute';
+import { parseAddress } from './roost';
 import type { UIRequest } from '../shared/protocol';
 
 declare const messenger: typeof browser & {
@@ -136,6 +139,9 @@ browser.runtime.onMessage.addListener(async (raw: unknown) => {
       return await getState();
     case 'ui:set-cli':
       await setSelectedCli(req.cli);
+      return { ok: true };
+    case 'ui:set-auto-recompute':
+      await setAutoRecompute(req.enabled);
       return { ok: true };
     case 'ui:save-intro':
       await setState({ intro: req.intro, introCompleted: true });
@@ -271,3 +277,21 @@ console.log('[ThunderClaw] background script started, ext version', EXTENSION_VE
 ensureSpace().catch((err) => console.error('[ThunderClaw] space register failed:', err));
 // 启动时跑一次握手；UI 顶端的"请重装 native host"红条由此触发
 handshakeAndStore().catch((err) => console.error('[ThunderClaw] handshake failed:', err));
+
+// 新邮件触发的增量重算。把每封新邮件的发件人塞进 auto-recompute 的 debounce 队列；
+// 30 秒内没新邮件就跑一次"针对受影响联系人的"重 Pulse + 重 Briefing。
+// 用户在简报顶端可以通过 toggle 关掉。
+try {
+  browser.messages.onNewMailReceived.addListener((_folder, msgs) => {
+    if (!msgs || !msgs.messages) return;
+    for (const m of msgs.messages) {
+      // header.author 可能是 'Name <a@b>'——抽出 email 部分
+      const parsed = parseAddress(m.author);
+      const email = parsed[0]?.email;
+      if (email) enqueueNewMailSender(email);
+    }
+    console.log('[ThunderClaw] onNewMailReceived: queued', msgs.messages.length, 'sender(s)');
+  });
+} catch (err) {
+  console.warn('[ThunderClaw] onNewMailReceived registration failed:', err);
+}

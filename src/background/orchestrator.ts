@@ -51,10 +51,10 @@ export async function startPipeline() {
       return;
     }
 
-    // 所有 Pulse 跑完，最后一次 Briefing 合并
+    // 所有 Pulse 跑完，最后一次 Briefing 合并 + 出整体概览
     await setPipeline({ phase: 'briefing' });
-    const merged = await runBriefing(items);
-    await setBriefing(merged);
+    const result = await runBriefing(items);
+    await setBriefing(result.items, result.overview);
     await setPipeline({ phase: 'done', finishedAt: Date.now() });
   } catch (err) {
     console.error('[ThunderClaw] pipeline error:', err);
@@ -94,8 +94,8 @@ export async function scanMore() {
     await setPipeline({ phase: 'briefing' });
     const cur = await getState();
     const allItems = [...cur.briefing, ...items.filter((it) => !cur.briefing.find((c) => c.id === it.id))];
-    const merged = await runBriefing(allItems);
-    await setBriefing(merged);
+    const result = await runBriefing(allItems);
+    await setBriefing(result.items, result.overview);
     await setPipeline({ phase: 'done', finishedAt: Date.now() });
   } catch (err) {
     console.error('[ThunderClaw] scan-more error:', err);

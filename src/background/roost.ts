@@ -35,11 +35,11 @@ export type ContactBundle = {
   lastDate: string; // ISO，用于二次排序
 };
 
-function lowerEmail(e: string) {
+export function lowerEmail(e: string) {
   return (e || '').trim().toLowerCase();
 }
 
-function parseAddress(s: string | undefined): { name: string; email: string }[] {
+export function parseAddress(s: string | undefined): { name: string; email: string }[] {
   // 简单解析 "Name <a@b>, Other <c@d>" 形式
   if (!s) return [];
   const out: { name: string; email: string }[] = [];

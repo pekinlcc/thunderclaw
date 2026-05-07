@@ -71,6 +71,15 @@ declare namespace browser {
       patch: { read?: boolean; flagged?: boolean; junk?: boolean; tags?: string[] },
     ): Promise<void>;
     function archive(messageIds: number[]): Promise<void>;
+    namespace onNewMailReceived {
+      // (folder, MessageList) — 新邮件入箱时触发；包括 Inbox 之外的子文件夹
+      function addListener(
+        listener: (folder: accounts.Folder, msgs: MessageList) => void,
+      ): void;
+      function removeListener(
+        listener: (folder: accounts.Folder, msgs: MessageList) => void,
+      ): void;
+    }
   }
 
   namespace mailTabs {

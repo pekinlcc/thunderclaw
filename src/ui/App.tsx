@@ -121,6 +121,8 @@ export function App() {
           items={state.briefing.filter(
             (it) => !state.acknowledged.includes(it.id) && !state.muted.includes(it.id),
           )}
+          overview={state.briefingOverview}
+          autoRecompute={state.autoRecompute}
           finishedAt={state.briefingFinishedAt}
           pipeline={state.pipeline}
           unscannedContacts={state.unscannedContacts}

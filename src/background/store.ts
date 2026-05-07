@@ -18,10 +18,12 @@ function defaultState(): AppState {
     pipeline: { phase: 'idle' },
     briefing: [],
     briefingFinishedAt: null,
+    briefingOverview: null,
     acknowledged: [],
     muted: [],
     unscannedContacts: 0,
     hostHandshake: null,
+    autoRecompute: true,
   };
 }
 
@@ -43,6 +45,7 @@ export async function getState(): Promise<AppState> {
         stored?.selectedCli === 'claude' || stored?.selectedCli === 'codex'
           ? stored.selectedCli
           : null,
+      autoRecompute: typeof stored?.autoRecompute === 'boolean' ? stored.autoRecompute : true,
     };
     cached = migrated;
     await browser.storage.local.set({ [KEY]: migrated });
@@ -88,8 +91,12 @@ export async function setSelectedCli(cli: 'claude' | 'codex') {
   return setState({ selectedCli: cli });
 }
 
-export async function setBriefing(items: BriefingItem[]) {
-  return setState({ briefing: items, briefingFinishedAt: Date.now() });
+export async function setBriefing(items: BriefingItem[], overview: string | null = null) {
+  return setState({ briefing: items, briefingFinishedAt: Date.now(), briefingOverview: overview });
+}
+
+export async function setAutoRecompute(enabled: boolean) {
+  return setState({ autoRecompute: enabled });
 }
 
 // 流式：把单个 Pulse 的结果合并进 briefing 数组，按 priority 排序。

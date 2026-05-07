@@ -349,6 +349,11 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - 加 `host-info` RPC + `PROTOCOL_VERSION` 元数据，扩展启动时握手，host 过旧 / 不一致就在 UI 顶端弹红/黄条 + 一键复制重装命令
   - 释出 `thunderclaw-native-host-v<v>.tar.gz` / `.zip`，Mac/Win 用户不用 git clone 整个仓库；Linux 仍优先 `.deb`
   - 堵掉"XPI 升了 host 没升 → 全部 `unknown method: llm-call` → 用户看到'今日无重要事项'但毫无提示"那个隐蔽坑
+- [x] **新邮件触发增量重算 + 简报顶端总览条**（v0.2.0）：
+  - 新邮件到达 → background 监听 `messages.onNewMailReceived` → 把发件人塞 debounce 队列（30 秒）→ 到期后只对受影响联系人重 Pulse + 全量重 Briefing（产出新顺序 + 新 overview）
+  - 用户在简报顶端 toggle 一键关掉自动重算（默认开）
+  - Briefing agent prompt 加了 `overview` 字段：1-2 句中文整体概览，"指明谁/什么事/为什么紧"，避免空话
+  - UI 顶端新增 `OverviewBar`：总数 + 高/中/低 priority pill 计数 + 折叠展开的 1-2 句概览 + auto-recompute 开关
 - [x] **日历/待办直接写入 Thunderbird，不再进入导入向导**（v0.1.23）：普通 MailExtension 没有官方 calendar create API，新增 `thunderclawCalendar` Experiment API，把 VEVENT/VTODO 直接解析成 `CalEvent` / `CalTodo` 并 `adoptItem` 到第一个可写且支持对应类型的日历；失败时才回落到 v0.1.20 的 NMH `.ics` 导入路径。
 - [x] **install-mac.sh 不再走 GitHub API**（v0.1.22）：之前用 `api.github.com` 解版本号，未认证 60 次/小时，重跑两三次就 403。改用 `/releases/latest` 的 302 重定向 location（不限流）；resolve 失败硬退出 + 提示用户传具体版本号。
 - [x] **install-mac.sh 兼容 bash 3.2**（v0.1.21）：macOS 自带 bash 3.2.57，`set -u` + `local var="value"` 在 piped-bash 上下文里偶发不绑定，会让 user.js 那一步前死掉，导致 sideloaded XPI 没启用。改用两行 `local var; var=...` 形式 + 去掉 `-u`。
@@ -361,9 +366,10 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - 用 sideload 路径而不是 `.pkg`：不需要 Apple Developer ID 签名，无 Gatekeeper "无法验证开发者"弹窗
   - 卸载：同一脚本带 `uninstall` 参数
 - [ ] macOS `.pkg` / Windows `.msi` 安装器（如真要 GUI 双击体验再做；当前一键脚本已覆盖大多数场景）
+- [x] **新邮件触发增量分析**（v0.2.0，对应原"新邮件触发增量分析"项）
 - [ ] Rubric 文件（AI 自维护的判定标准）
 - [ ] 设置面板（CLI 切换、清除数据、编辑自我介绍）
-- [ ] 新邮件触发增量分析
+<!-- moved up to v0.2.0 完成项 -->
 
 ## 9. v1 明确不做
 

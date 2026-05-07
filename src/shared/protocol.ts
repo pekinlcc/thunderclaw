@@ -69,7 +69,8 @@ export type UIRequest =
   | { kind: 'ui:create-calendar-event'; itemId: string; actionLabel: string }
   | { kind: 'ui:create-task'; itemId: string; actionLabel: string }
   | { kind: 'ui:get-email-preview'; messageId: number }
-  | { kind: 'ui:open-original'; messageId: number };
+  | { kind: 'ui:open-original'; messageId: number }
+  | { kind: 'ui:set-auto-recompute'; enabled: boolean };
 
 // Event extractor 输出
 export type ExtractedEvent = {
@@ -191,10 +192,16 @@ export type AppState = {
   pipeline: Pipeline;
   briefing: BriefingItem[];
   briefingFinishedAt: number | null;
+  // Briefing agent 输出的 1-2 句整体概览，例如"今天 12 件待处理；HSBC 入账提醒和家长会
+  // 回复最紧急。"。为 null 表示尚未跑过 briefing / briefing 输出 schema 缺失。
+  briefingOverview: string | null;
   acknowledged: string[];
   muted: string[];
   // 优先级排队 + 分批扫描状态
   unscannedContacts: number; // 还没扫的 top 50 之外的联系人数
   // 启动时握手的结果——内存态，不持久化（每次重启都 re-probe）
   hostHandshake: HostHandshake;
+  // 新邮件到达时是否自动重新分析（只重跑相关联系人的 Pulse + 全量重算 Briefing）。
+  // 默认 true。用户在简报顶端可以一键开关。
+  autoRecompute: boolean;
 };

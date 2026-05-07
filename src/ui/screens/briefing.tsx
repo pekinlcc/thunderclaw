@@ -11,6 +11,7 @@ import type {
   SuggestedActionKind,
 } from '../../shared/protocol';
 import { ui } from '../messaging';
+import { OverviewBar } from './overview-bar';
 
 // ─── 按 kind 渲染动作按钮 ───────────────────────────────────────────
 const KIND_STYLES: Record<
@@ -986,6 +987,8 @@ function ProgressBanner({
 
 export function BriefingScreen({
   items,
+  overview,
+  autoRecompute,
   finishedAt,
   pipeline,
   unscannedContacts,
@@ -993,6 +996,8 @@ export function BriefingScreen({
   onScanMore,
 }: {
   items: BriefingItem[];
+  overview: string | null;
+  autoRecompute: boolean;
   finishedAt: number | null;
   pipeline: Pipeline;
   unscannedContacts: number;
@@ -1381,6 +1386,12 @@ export function BriefingScreen({
       }}
     >
       <ProgressBanner pipeline={pipeline} unscanned={unscannedContacts} />
+      <OverviewBar
+        items={items}
+        overview={overview}
+        autoRecompute={autoRecompute}
+        isAnalyzing={isAnalyzing}
+      />
       <div
         style={{
           flex: 1,
