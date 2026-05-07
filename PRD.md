@@ -239,15 +239,18 @@ Mockup ③ 提供两个按钮：
 
 - **不接云 API、不收 API key**，复用用户本地已登录的 CLI
 - 支持 Claude Code CLI 和 Codex CLI 两种后端，运行时探测可用性
-- **同时检测到两个 CLI 时**：用户在设置里可选，**默认 Claude Code**
-- **登录态探测**：检查 `~/.claude/` 存在 + 跑 `claude config get` 看退出码，两条都过才算登录；Codex 同理
-- **调用方式**：通过 Native Messaging Host
+- **引擎选择**：onboarding 第一步让用户在两个已登录的 CLI 里选一个，存进 `state.selectedCli`。所有 LLM 调用（Pulse / Briefing / Writer / Event+Task Extractor）都根据这个选项分发；不存在"默认引擎"——没选完 intro 就不会跑流水线
+- **登录态探测**：检查 `~/.claude/.credentials.json` 里有 `accessToken` 才算 Claude 已登录；Codex 看 `~/.codex/auth.json` 或 `~/.config/codex/auth.json` 存在
+- **调用方式**：通过 Native Messaging Host，统一走 `llm-call` RPC，把 `engine: 'claude' | 'codex'` 作为参数透传
 
 ### 5.1 Native Messaging Host
 
 - 因为 XPI 沙箱无 `child_process`，单独写一个 Node helper 程序
-- 扩展通过 stdin/stdout 与 helper 通信
-- helper 负责 spawn `claude -p` / `codex exec`
+- 扩展通过 stdin/stdout 与 helper 通信（4-byte length-prefix JSON）
+- helper 收到 `llm-call` 后按 `engine` 字段路由：
+  - **claude**：spawn `claude --print --max-turns 1 --output-format text`，prompt 走 stdin，`--append-system-prompt` 注入 system prompt，`--disallowedTools` 关掉所有工具只取文本
+  - **codex**：spawn `codex exec --skip-git-repo-check --color never -o <tmpfile>`，cwd 设到独立 tmpdir（避开 git 仓库检测），prompt 走 stdin（system prompt 拼前面），最后从 `tmpfile` 读"最后一条 agent message"——这样规避 codex stdout 含 banner/推理/turn marker 的噪音
+- 严格分发：未知 engine 在 helper 端直接抛错，不静默回退到任一 CLI
 - 不走 fork Thunderbird、不走 Experiment API（前者维护代价高，后者失签名）
 
 ### 5.2 Native Host 安装方式
@@ -309,7 +312,7 @@ v1 **不**做跨设备同步、不做手动备份/导出。
 原则：**部分结果 > 全无**，单点失败不阻塞整批。
 
 - **CLI token 过期 / 未登录**：暂停整批 → 弹回 ① CLI 引导屏
-- **LLM 返回无法 parse 的 JSON**：retry 1 次；仍失败则跳过该联系人，错误进 log
+- **LLM 返回无法 parse 的 JSON**：跳过该联系人；console 打出原始输出的头尾各 400 字符 + 总长度，便于诊断（v0.1.16）
 - **Native Host 崩溃**：扩展自动重启 + UI 提示
 - **IMAP 临时断网**：用上一次 briefing 继续展示，状态栏标 "数据可能过期"
 - **单联系人邮件量过大（>200）**：截到最近 30 封；较早的只发 metadata（subject + date）
@@ -331,6 +334,11 @@ v1 **不**做跨设备同步、不做手动备份/导出。
 - [x] **日历集成 + 任务集成**（v0.1.9 / 含 Event Extractor、Task Extractor agent + .ics 兜底）
 - [x] **复合用户决定按钮**（v0.1.10 / SuggestedAction.steps 嵌套结构 + ⚙ 调整面板 + 一键 fire 全套）
 - [x] **Schema 版本化 + 自动迁移**（v0.1.11 / 升级时自动清掉旧 schema 缓存，避免 UI 渲染崩溃）
+- [x] **静默 .ics 兜底 + 自动用 Thunderbird 打开**（v0.1.12 / 不再弹保存对话框）
+- [x] **.ics 兜底文件落到 Downloads/ThunderClaw/ + 10s 后自动清理**（v0.1.13）
+- [x] **修复"执行中..."按钮卡死 + Extract agent 超时收紧到 60s**（v0.1.14）
+- [x] **CLI 引擎分发按用户在 intro 里的选择路由**（v0.1.15 / 加 `llm-call` RPC + Codex 通过 `-o tmpfile` 拿干净输出 + 严格分发不静默回退）
+- [x] **诊断日志加厚**（v0.1.16 / Pulse 解析失败贴出原始输出头尾、Codex 失败带上 stderr+stdout、callLLM 入口打 engine 名）
 - [ ] macOS `.pkg` / Windows `.msi` 安装器
 - [ ] Rubric 文件（AI 自维护的判定标准）
 - [ ] 设置面板（CLI 切换、清除数据、编辑自我介绍）

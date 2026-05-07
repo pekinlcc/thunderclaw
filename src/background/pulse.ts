@@ -243,13 +243,22 @@ export async function runPulse(
       });
       raw = out.text;
     } catch (err) {
-      console.warn('[ThunderClaw] pulse failed for', b.primaryEmail, err);
+      console.warn('[ThunderClaw] pulse call failed for', b.primaryEmail, err);
       continue;
     }
 
     const parsed = tryParseJSON(raw);
     if (!parsed) {
-      console.warn('[ThunderClaw] unparsable pulse output for', b.primaryEmail);
+      // 关键诊断：贴出原始输出的头尾，让用户能判断是 LLM 回了空 / 回了非 JSON / CLI banner 串进来了。
+      // 不打全部，省得 console 被刷爆；800 字符够看清是什么病。
+      const snippet = raw.length > 800
+        ? raw.slice(0, 400) + '\n…[middle truncated]…\n' + raw.slice(-400)
+        : raw;
+      console.warn(
+        '[ThunderClaw] unparsable pulse output for',
+        b.primaryEmail,
+        `(raw length=${raw.length})\n--- RAW BEGIN ---\n${snippet}\n--- RAW END ---`,
+      );
       continue;
     }
 

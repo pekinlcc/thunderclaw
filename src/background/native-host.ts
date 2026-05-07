@@ -81,6 +81,8 @@ class NativeHost {
     if (engine !== 'claude' && engine !== 'codex') {
       throw new Error('No CLI engine selected — finish the intro first');
     }
+    // 日志带上 engine 名，便于用户复现"我选了 Codex，看简报为啥还是空"的时候核对
+    console.log('[ThunderClaw][NMH] llm-call engine=', engine, 'promptLen=', params.prompt.length);
     return this.call<ClaudeCallResult>({
       method: 'llm-call',
       params: { ...params, engine },

@@ -154,10 +154,12 @@ export async function callCodex({ prompt, systemPrompt, timeoutMs = 180000 }) {
     ];
     const child = spawn(codexPath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: workDir,
       env: { ...process.env, PATH: process.env.PATH, NO_COLOR: '1' },
     });
 
     let stderr = '';
+    let stdout = '';
     let killed = false;
     const cleanup = () => {
       try { rmSync(workDir, { recursive: true, force: true }); } catch { /* best effort */ }
@@ -168,7 +170,10 @@ export async function callCodex({ prompt, systemPrompt, timeoutMs = 180000 }) {
       setTimeout(() => child.kill('SIGKILL'), 2000).unref();
     }, timeoutMs);
 
-    child.stdout.on('data', () => { /* 不要 buffer 整个 stdout，会爆内存 */ });
+    // stdout 留 cap，主要诊断用——出错时把开头 1000 字符贴进 reject 原因
+    child.stdout.on('data', (b) => {
+      if (stdout.length < 4000) stdout += b.toString('utf8');
+    });
     child.stderr.on('data', (b) => (stderr += b.toString('utf8')));
     child.on('error', (err) => {
       clearTimeout(timer);
@@ -182,15 +187,16 @@ export async function callCodex({ prompt, systemPrompt, timeoutMs = 180000 }) {
         return reject(new Error(`codex timeout (${timeoutMs}ms)`));
       }
       if (code !== 0) {
+        const tail = `stderr: ${stderr.slice(0, 500)}\nstdout-head: ${stdout.slice(0, 500)}`;
         cleanup();
-        return reject(new Error(`codex exit ${code}: ${stderr.slice(0, 500)}`));
+        return reject(new Error(`codex exit ${code}: ${tail}`));
       }
       let text = '';
       try {
         text = readFileSync(outFile, 'utf8');
       } catch (err) {
         cleanup();
-        return reject(new Error(`codex output file missing: ${err.message}`));
+        return reject(new Error(`codex output file missing: ${err.message}; stdout-head: ${stdout.slice(0, 300)}`));
       }
       cleanup();
       resolve(text.trim());

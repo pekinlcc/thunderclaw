@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "ThunderClaw",
   "description": "AI 邮件助手，由本地 Claude Code / Codex CLI 驱动",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "author": "pekinlcc",
   "browser_specific_settings": {
     "gecko": {
