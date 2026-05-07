@@ -64,10 +64,12 @@ function sortStepsForExecution(steps: ActionStep[]): ActionStep[] {
 }
 
 // 每一步的执行结果（用于内联进度展示）
+// 'deferred' 表示这步被推迟到 reply 之后再跑（典型："我不参加 = reply + ack"，
+// ack 不能在 reply 之前就跑，否则卡片会被过滤掉、回复正文用户都看不到）
 type StepResult = {
   kind: ActionStepKind;
   detail: string;
-  state: 'pending' | 'running' | 'done' | 'error';
+  state: 'pending' | 'running' | 'done' | 'error' | 'deferred';
   message?: string; // 显示给用户的简要状态文字
 };
 
@@ -302,11 +304,13 @@ function ProgressPanel({
           const icon =
             r.state === 'done' ? '✓' :
             r.state === 'error' ? '✗' :
-            r.state === 'running' ? '⏳' : '·';
+            r.state === 'running' ? '⏳' :
+            r.state === 'deferred' ? '⏸' : '·';
           const color =
             r.state === 'done' ? '#2A8B3F' :
             r.state === 'error' ? '#C44A2C' :
-            r.state === 'running' ? tbStyles.blue : tbStyles.textFaint;
+            r.state === 'running' ? tbStyles.blue :
+            r.state === 'deferred' ? tbStyles.textMuted : tbStyles.textFaint;
           return (
             <div
               key={i}
@@ -326,6 +330,11 @@ function ProgressPanel({
                 {r.message && (
                   <span style={{ color: tbStyles.textMuted, marginLeft: 6 }}>
                     {r.message}
+                  </span>
+                )}
+                {r.state === 'deferred' && !r.message && (
+                  <span style={{ color: tbStyles.textMuted, marginLeft: 6 }}>
+                    （回复确认后再执行）
                   </span>
                 )}
               </span>
@@ -442,6 +451,7 @@ function ActionsBox({
     results: StepResult[];
     error: string | null;
     done: boolean;
+    deferredAckIdx: number | null;
   } | null;
   generated: { detail: string; text: string } | null;
   busy: boolean;
@@ -1093,11 +1103,14 @@ export function BriefingScreen({
   // ─── intent 执行状态 ──────────────────────────────
   // 用户点过哪一组 intent，每一步的状态如何
   // done=true 表示这次 run 已经跑完（成功或失败），结果还展示着但按钮不再"执行中"
+  // deferredAckIdx 是被推迟的 acknowledge 步在 results 里的 index，等用户对 reply
+  // 作出最终动作时再跑（见 splitDeferredAck）；没有推迟则为 null
   const [runState, setRunState] = useState<{
     actionIdx: number;
     results: StepResult[];
     error: string | null;
     done: boolean;
+    deferredAckIdx: number | null;
   } | null>(null);
   // reply 步骤生成的回复正文（已审稿区域）
   const [generated, setGenerated] = useState<{
@@ -1133,6 +1146,25 @@ export function BriefingScreen({
     setExpandedSelected((sel) => sel.map((v, j) => (j === i ? !v : v)));
   }
 
+  // 一个 intent 内：是否同时含 reply + acknowledge —— 这种情况下 ack 不能在 reply 之前就跑，
+  // 否则 App 那一层根据 acknowledged[] 过滤后会把这张卡从列表里挤掉，
+  // BriefingDetail 切到下一张卡 → 那个 useEffect 一清，用户连生成的回复正文都看不到一眼。
+  // 解决：从立即执行队列里抽掉 ack，把它存到"待执行"里，等用户对回复作出最终动作（开撰写窗口 / 取消）后再跑。
+  function splitDeferredAck(steps: ActionStep[]): {
+    immediate: ActionStep[];
+    deferredAck: ActionStep | null;
+  } {
+    const hasReply = steps.some((s) => s.kind === 'reply');
+    const ack = steps.find((s) => s.kind === 'acknowledge') ?? null;
+    if (hasReply && ack) {
+      return {
+        immediate: steps.filter((s) => s.kind !== 'acknowledge'),
+        deferredAck: ack,
+      };
+    }
+    return { immediate: steps, deferredAck: null };
+  }
+
   // 执行一个 intent 的指定 steps（stepIdxs=null 表示执行全部）
   async function runIntent(actionIdx: number, stepIdxs: number[] | null) {
     if (!item) return;
@@ -1144,15 +1176,24 @@ export function BriefingScreen({
         : stepIdxs.map((i) => action.steps[i]).filter((s): s is ActionStep => !!s);
     if (selectedSteps.length === 0) return;
     // 排序：calendar/task/acknowledge 先，reply 最后
-    const orderedSteps = sortStepsForExecution(selectedSteps);
+    const ordered = sortStepsForExecution(selectedSteps);
+    // 把"同时有 reply"情况下的 acknowledge 抽出来，等用户审完再跑
+    const { immediate: orderedSteps, deferredAck } = splitDeferredAck(ordered);
 
-    // 初始化进度数组 — 全 pending
-    const initialResults: StepResult[] = orderedSteps.map((s) => ({
-      kind: s.kind,
-      detail: s.detail,
-      state: 'pending',
-    }));
-    setRunState({ actionIdx, results: initialResults, error: null, done: false });
+    // 初始化进度数组 — 全 pending（含被推迟的 ack，UI 上会单独标"待用户处理回复后执行"）
+    const initialResults: StepResult[] = [
+      ...orderedSteps.map((s) => ({ kind: s.kind, detail: s.detail, state: 'pending' as const })),
+      ...(deferredAck
+        ? [{ kind: deferredAck.kind, detail: deferredAck.detail, state: 'deferred' as const }]
+        : []),
+    ];
+    setRunState({
+      actionIdx,
+      results: initialResults,
+      error: null,
+      done: false,
+      deferredAckIdx: deferredAck ? initialResults.length - 1 : null,
+    });
     setGenerated(null);
     setBusy(true);
 
@@ -1239,8 +1280,64 @@ export function BriefingScreen({
       const res = await ui.openCompose(item.id, generated.text);
       if (!res.ok) {
         showToast('error', `打开撰写窗口失败：${res.error || '未知错误'}`);
+        return; // 撰写窗口都没开起来，先不要把卡片归档掉，让用户能再点一次
       }
-      // 成功不弹 toast——TB 会开撰写窗口，那就是反馈
+      // 撰写窗口打开成功是用户对回复的最终动作。如果 intent 含 deferred ack，
+      // 现在跑——卡片被过滤的副作用现在发生才合理（用户已经看到草稿了）
+      if (runState?.deferredAckIdx != null && !runState.results[runState.deferredAckIdx]?.message) {
+        const idx = runState.deferredAckIdx;
+        // 标记 running
+        setRunState((rs) =>
+          rs
+            ? {
+                ...rs,
+                results: rs.results.map((r, i) =>
+                  i === idx ? { ...r, state: 'running' as const } : r,
+                ),
+              }
+            : rs,
+        );
+        try {
+          const ar = await ui.acknowledge(item.id);
+          const a = ar.archive;
+          const okMsg =
+            a && a.errors.length === 0
+              ? `已标读 · 归档 ${a.archived} 封`
+              : a && a.archived === 0
+                ? `标读 ${a.marked}，归档失败`
+                : '已从简报移除';
+          setRunState((rs) =>
+            rs
+              ? {
+                  ...rs,
+                  results: rs.results.map((r, i) =>
+                    i === idx
+                      ? { ...r, state: a && a.archived === 0 ? ('error' as const) : ('done' as const), message: okMsg }
+                      : r,
+                  ),
+                }
+              : rs,
+          );
+          if (a && a.errors.length === 0) {
+            showToast('success', `${KIND_STYLES.acknowledge.icon} ${okMsg}`);
+          } else if (a && a.archived === 0) {
+            showToast('warning', `已标读 ${a.marked} 封，归档失败：${a.errors[0]}`);
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setRunState((rs) =>
+            rs
+              ? {
+                  ...rs,
+                  results: rs.results.map((r, i) =>
+                    i === idx ? { ...r, state: 'error' as const, message: msg } : r,
+                  ),
+                }
+              : rs,
+          );
+          showToast('error', `归档失败：${msg}`);
+        }
+      }
     } finally {
       setBusy(false);
     }

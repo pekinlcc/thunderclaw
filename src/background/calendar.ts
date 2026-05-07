@@ -43,38 +43,52 @@ function escapeICS(s: string): string {
 const ICS_SUBFOLDER = 'ThunderClaw';
 const CLEANUP_DELAY_MS = 10_000;
 
-async function downloadAndOpenICS(filename: string, ics: string): Promise<void> {
+// 返回 'opened' 表示 downloads.open 成功（TB 应该会弹导入对话框，可以放心 10s 后清理），
+// 返回 'manual' 表示文件下到磁盘了但自动打开失败（用户需要手动双击），不能清理。
+async function downloadAndOpenICS(
+  filename: string,
+  ics: string,
+): Promise<{ status: 'opened' | 'manual'; relPath: string }> {
   console.log('[ThunderClaw][calendar] fallback: downloading .ics', filename);
+  const relPath = `${ICS_SUBFOLDER}/${filename}`;
   const blob = new Blob([ics], { type: 'text/calendar' });
   const url = URL.createObjectURL(blob);
   const downloadId = await browser.downloads.download({
     url,
-    filename: `${ICS_SUBFOLDER}/${filename}`,
+    filename: relPath,
     saveAs: false,
   });
   console.log('[ThunderClaw][calendar] downloadId =', downloadId);
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 
-  // 让 TB 把文件读进内存触发导入对话框
+  // 让 TB 把文件读进内存触发导入对话框。需要 manifest 里 downloads.open 权限。
+  let opened = false;
   try {
     await browser.downloads.open(downloadId);
+    opened = true;
   } catch (err) {
-    console.warn('[ThunderClaw] downloads.open failed, .ics 仍在 Downloads 子目录:', err);
+    // 权限缺失或系统级 reject。关键：不要假装成功——把"文件已下到磁盘需手动打开"如实告诉调用方。
+    console.warn('[ThunderClaw] downloads.open failed; user must open file manually:', err);
   }
 
-  // ~10s 后清掉磁盘文件 + 下载历史条目（此时 TB 已经把 .ics 内容读进对话框了）
-  setTimeout(async () => {
-    try {
-      await browser.downloads.removeFile(downloadId);
-    } catch (err) {
-      console.warn('[ThunderClaw] downloads.removeFile failed:', err);
-    }
-    try {
-      await browser.downloads.erase({ id: downloadId });
-    } catch (err) {
-      console.warn('[ThunderClaw] downloads.erase failed:', err);
-    }
-  }, CLEANUP_DELAY_MS);
+  if (opened) {
+    // ~10s 后清掉磁盘文件 + 下载历史条目（此时 TB 已经把 .ics 内容读进对话框了）
+    setTimeout(async () => {
+      try {
+        await browser.downloads.removeFile(downloadId);
+      } catch (err) {
+        console.warn('[ThunderClaw] downloads.removeFile failed:', err);
+      }
+      try {
+        await browser.downloads.erase({ id: downloadId });
+      } catch (err) {
+        console.warn('[ThunderClaw] downloads.erase failed:', err);
+      }
+    }, CLEANUP_DELAY_MS);
+    return { status: 'opened', relPath };
+  }
+  // open 失败：文件留着，用户需要手动打开
+  return { status: 'manual', relPath };
 }
 
 export function buildICS(event: ExtractedEvent): string {
@@ -134,19 +148,20 @@ export async function createCalendarEvent(
     }
   }
 
-  // 2) Fallback: 静默下到 Downloads/ThunderClaw/ 子文件夹 → 自动用 TB 打开 →
-  //    TB 弹日历导入对话框 → 10s 后我们删掉文件 + 下载历史，不污染 Downloads
+  // 2) Fallback: 下到 Downloads/ThunderClaw/，尝试自动用 TB 打开
   try {
     const ics = buildICS(event);
     const filename = `event-${Date.now()}.ics`;
-    await downloadAndOpenICS(filename, ics);
+    const r = await downloadAndOpenICS(filename, ics);
     return {
       ok: true,
       via: 'fallback-ics',
-      detail: 'Thunderbird 会弹一个日历导入提示，点确认即可',
+      detail:
+        r.status === 'opened'
+          ? 'Thunderbird 会弹一个日历导入提示，点确认即可'
+          : `已保存到 Downloads/${r.relPath}，请双击打开导入`,
     };
   } catch (err) {
-    // 3) 最终兜底：剪贴板
     return {
       ok: false,
       via: 'fallback-clipboard',
@@ -200,11 +215,14 @@ export async function createTask(task: ExtractedTask): Promise<CreateActionResul
     if (due) lines.push(`DUE:${due}`);
     if (task.notes) lines.push(`DESCRIPTION:${escapeICS(task.notes)}`);
     lines.push('END:VTODO', 'END:VCALENDAR');
-    await downloadAndOpenICS(`task-${Date.now()}.ics`, lines.join('\r\n'));
+    const r = await downloadAndOpenICS(`task-${Date.now()}.ics`, lines.join('\r\n'));
     return {
       ok: true,
       via: 'fallback-ics',
-      detail: 'Thunderbird 会弹任务导入提示，点确认即可',
+      detail:
+        r.status === 'opened'
+          ? 'Thunderbird 会弹任务导入提示，点确认即可'
+          : `已保存到 Downloads/${r.relPath}，请双击打开导入`,
     };
   } catch (err) {
     return {

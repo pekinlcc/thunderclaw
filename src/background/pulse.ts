@@ -261,9 +261,23 @@ export async function runPulse(
       );
       continue;
     }
+    if (!Array.isArray(parsed.items)) {
+      console.warn(
+        '[ThunderClaw] pulse output items is not an array for',
+        b.primaryEmail,
+        '— got typeof',
+        typeof parsed.items,
+      );
+      continue;
+    }
+
+    // bundle.messages 的 id → RoostMessage 索引，BriefingItem 计算 reply target / 收到 IDs 用
+    const msgById = new Map<number, RoostMessage>();
+    for (const m of b.messages) msgById.set(m.id, m);
+    const PRIORITY_WHITELIST = new Set(['high', 'medium', 'low']);
 
     const newItems: BriefingItem[] = [];
-    for (const item of parsed.items ?? []) {
+    for (const item of parsed.items) {
       const itemId = `${b.key}::${item.thread_key || item.title}`;
       if (acknowledged.has(itemId) || muted.has(itemId)) continue;
       const av = avatarFor(b.displayName);
@@ -301,6 +315,25 @@ export async function runPulse(
         })
         .filter((a): a is { label: string; steps: { kind: 'reply' | 'calendar' | 'task' | 'acknowledge'; detail: string }[] } => !!a)
         .slice(0, 5); // 最多 5 个 intent，UI 容量考虑
+      // 把 LLM 回的 message_ids 跟 bundle 的真实 messages 对一遍，再按方向分流——
+      // 这样 reply 永远 reply 给"对方"，archive 也只动"收到"那一面，不会移到 Sent。
+      const llmIds = (item.message_ids ?? []).filter(
+        (n: unknown): n is number => typeof n === 'number',
+      );
+      const matched = llmIds.map((id) => msgById.get(id)).filter((m): m is RoostMessage => !!m);
+      const byDateDesc = (a: RoostMessage, b2: RoostMessage) =>
+        Date.parse(b2.date) - Date.parse(a.date);
+      const incoming = matched.filter((m) => !m.isUserSent).sort(byDateDesc);
+      const outgoing = matched.filter((m) => m.isUserSent).sort(byDateDesc);
+      const replyTargetMsg = incoming[0] ?? outgoing[0] ?? null;
+      const replyTargetIsUserSent = !incoming[0] && !!outgoing[0];
+      const incomingEmailIds = incoming.map((m) => m.id);
+
+      // priority 白名单：LLM 偶尔会回 'urgent' / null，UI 直接 map[priority] 会 undefined 然后崩
+      const priority: BriefingItem['priority'] = PRIORITY_WHITELIST.has(item.priority as string)
+        ? (item.priority as BriefingItem['priority'])
+        : 'medium';
+
       const built: BriefingItem = {
         id: itemId,
         contactName: b.displayName,
@@ -309,11 +342,14 @@ export async function runPulse(
         contactColor: av.color,
         title: item.title,
         summary: item.summary,
-        priority: item.priority,
+        priority,
         deadline: item.deadline ?? null,
         suggestedActions,
         reason: item.reason ?? '',
-        emailIds: item.message_ids ?? [],
+        emailIds: matched.map((m) => m.id),
+        incomingEmailIds,
+        replyToMessageId: replyTargetMsg?.id ?? null,
+        replyTargetIsUserSent,
         threadKey: item.thread_key ?? '',
       };
       newItems.push(built);

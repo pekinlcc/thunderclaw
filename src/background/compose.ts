@@ -27,12 +27,20 @@ export async function openComposeFor({
   if (!replyText || !replyText.trim()) {
     throw new Error('replyText is empty');
   }
-  const messageId = item.emailIds.find((id) => typeof id === 'number');
+  // 用 pulse 算好的 replyToMessageId（最近一封"收到"，避免 reply-to-self）。
+  // 如果整个 thread 都是用户自己发出的（follow-up 场景），强制 replyToAll
+  // 才能把信发到原收件人，而不是发给自己。
+  const messageId = item.replyToMessageId;
+  const effectiveReplyAll = replyAll || item.replyTargetIsUserSent;
 
   if (typeof messageId === 'number') {
     try {
-      const replyType = replyAll ? 'replyToAll' : 'replyToSender';
-      console.log('[ThunderClaw] beginReply', { messageId, replyType });
+      const replyType = effectiveReplyAll ? 'replyToAll' : 'replyToSender';
+      console.log('[ThunderClaw] beginReply', {
+        messageId,
+        replyType,
+        targetIsUserSent: item.replyTargetIsUserSent,
+      });
       await browser.compose.beginReply(messageId, replyType as any, {
         body: bodyAsHTML(replyText),
         plainTextBody: replyText,
@@ -44,7 +52,7 @@ export async function openComposeFor({
       console.warn('[ThunderClaw] beginReply failed:', err);
     }
   } else {
-    console.warn('[ThunderClaw] no usable messageId for beginReply, fallback to beginNew');
+    console.warn('[ThunderClaw] no replyToMessageId, fallback to beginNew');
   }
 
   const subject = item.title.startsWith('Re:') ? item.title : `Re: ${item.title}`;

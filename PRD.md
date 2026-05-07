@@ -339,6 +339,11 @@ v1 **不**做跨设备同步、不做手动备份/导出。
 - [x] **修复"执行中..."按钮卡死 + Extract agent 超时收紧到 60s**（v0.1.14）
 - [x] **CLI 引擎分发按用户在 intro 里的选择路由**（v0.1.15 / 加 `llm-call` RPC + Codex 通过 `-o tmpfile` 拿干净输出 + 严格分发不静默回退）
 - [x] **诊断日志加厚**（v0.1.16 / Pulse 解析失败贴出原始输出头尾、Codex 失败带上 stderr+stdout、callLLM 入口打 engine 名）
+- [x] **修四个真 bug**（v0.1.17）：
+  - 加 `downloads.open` 权限——之前缺权限导致 .ics fallback 静默失败但 UI 谎称"已弹导入提示"
+  - BriefingItem 加 `replyToMessageId` / `replyTargetIsUserSent` / `incomingEmailIds`——避免 follow-up 场景下 `replyToSender` 把信发给用户自己，归档也只动收到的那部分不动 Sent
+  - 复合 intent 含 reply+ack 时把 ack 推迟到用户开撰写窗口后再跑，否则卡片会在用户看到回复正文之前就被 acknowledged 过滤掉
+  - LLM 输出 `priority` 不在白名单时归到 'medium'（防 UI 渲染崩）；`items` 不是数组时跳过该联系人
 - [ ] macOS `.pkg` / Windows `.msi` 安装器
 - [ ] Rubric 文件（AI 自维护的判定标准）
 - [ ] 设置面板（CLI 切换、清除数据、编辑自我介绍）

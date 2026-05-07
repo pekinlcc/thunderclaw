@@ -109,10 +109,11 @@ browser.runtime.onMessage.addListener(async (raw: unknown) => {
       scanMore();
       return { ok: true };
     case 'ui:acknowledge': {
-      // 用户点 "我已知晓"：标记 item 已处理 + 把对应原邮件标已读 + 归档
+      // 用户点 "我已知晓"：标记 item 已处理 + 把对应原邮件标已读 + 归档。
+      // 只动 incomingEmailIds（"收到"那部分），不要把用户自己 Sent 里的邮件搬走。
       const cur = await getState();
       const item = cur.briefing.find((i) => i.id === req.itemId);
-      const ids = item?.emailIds ?? [];
+      const ids = item?.incomingEmailIds ?? [];
       let archiveResult: Awaited<ReturnType<typeof markReadAndArchive>> | null = null;
       if (ids.length > 0) {
         archiveResult = await markReadAndArchive(ids);

@@ -139,7 +139,15 @@ export type BriefingItem = {
   // acknowledge 多种 kind。空数组表示 "没什么可做的"，UI 会显示一个默认占位。
   suggestedActions: SuggestedAction[];
   reason: string;
+  // 与本卡片相关的所有邮件 ID（含发出 + 收到），用于"打开原邮件" / 预览
   emailIds: number[];
+  // 仅"收到"的子集；acknowledge 的归档动作只动这部分，不会把用户 Sent 邮件移走
+  incomingEmailIds: number[];
+  // 回复的目标邮件 ID。
+  // 优先取最近一封"收到"的；若整个 thread 全是用户自己发出的（follow-up 场景），
+  // 取最近一封 user-sent，并设 replyTargetIsUserSent=true，UI 会用 replyToAll 而不是 replyToSender
+  replyToMessageId: number | null;
+  replyTargetIsUserSent: boolean;
   threadKey: string;
 };
 

@@ -6,7 +6,7 @@ const KEY = 'thunderclaw.state';
 // 任何会改变 BriefingItem / SuggestedAction 形状的版本，bump 这个数字。
 // store 加载时如果发现存的不是当前 schema，会清掉 briefing / acknowledged /
 // muted 这些运行时缓存（避免新代码读到老结构数据崩 UI），但保留 intro / selectedCli。
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function defaultState(): AppState {
   return {
