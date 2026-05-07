@@ -36,6 +36,43 @@ function escapeICS(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
 }
 
+// .ics 文件落到 Downloads/ThunderClaw/ 子文件夹做命名空间，
+// 触发 TB 导入后 ~10s 自动从磁盘 + 下载历史里清掉，避免污染用户的 Downloads。
+const ICS_SUBFOLDER = 'ThunderClaw';
+const CLEANUP_DELAY_MS = 10_000;
+
+async function downloadAndOpenICS(filename: string, ics: string): Promise<void> {
+  const blob = new Blob([ics], { type: 'text/calendar' });
+  const url = URL.createObjectURL(blob);
+  const downloadId = await browser.downloads.download({
+    url,
+    filename: `${ICS_SUBFOLDER}/${filename}`,
+    saveAs: false,
+  });
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+  // 让 TB 把文件读进内存触发导入对话框
+  try {
+    await browser.downloads.open(downloadId);
+  } catch (err) {
+    console.warn('[ThunderClaw] downloads.open failed, .ics 仍在 Downloads 子目录:', err);
+  }
+
+  // ~10s 后清掉磁盘文件 + 下载历史条目（此时 TB 已经把 .ics 内容读进对话框了）
+  setTimeout(async () => {
+    try {
+      await browser.downloads.removeFile(downloadId);
+    } catch (err) {
+      console.warn('[ThunderClaw] downloads.removeFile failed:', err);
+    }
+    try {
+      await browser.downloads.erase({ id: downloadId });
+    } catch (err) {
+      console.warn('[ThunderClaw] downloads.erase failed:', err);
+    }
+  }, CLEANUP_DELAY_MS);
+}
+
 export function buildICS(event: ExtractedEvent): string {
   const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@thunderclaw`;
   const dtstamp = fmtICSDate(new Date().toISOString(), false);
@@ -93,28 +130,16 @@ export async function createCalendarEvent(
     }
   }
 
-  // 2) Fallback: 静默下载 .ics → 自动用 TB 打开 → TB 弹日历导入对话框
+  // 2) Fallback: 静默下到 Downloads/ThunderClaw/ 子文件夹 → 自动用 TB 打开 →
+  //    TB 弹日历导入对话框 → 10s 后我们删掉文件 + 下载历史，不污染 Downloads
   try {
     const ics = buildICS(event);
-    const blob = new Blob([ics], { type: 'text/calendar' });
-    const url = URL.createObjectURL(blob);
-    const filename = `thunderclaw-event-${Date.now()}.ics`;
-    const downloadId = await browser.downloads.download({
-      url,
-      filename,
-      saveAs: false, // **关键**：不弹保存对话框，直接进 Downloads
-    });
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    // 自动用系统默认 app 打开 .ics —— 在 TB 内会触发 calendar import 对话框
-    try {
-      await browser.downloads.open(downloadId);
-    } catch (err) {
-      console.warn('[ThunderClaw] downloads.open failed, .ics 仍在 Downloads:', err);
-    }
+    const filename = `event-${Date.now()}.ics`;
+    await downloadAndOpenICS(filename, ics);
     return {
       ok: true,
       via: 'fallback-ics',
-      detail: '已生成 .ics，Thunderbird 会弹一个日历导入提示，点确认即可',
+      detail: 'Thunderbird 会弹一个日历导入提示，点确认即可',
     };
   } catch (err) {
     // 3) 最终兜底：剪贴板
@@ -155,7 +180,7 @@ export async function createTask(task: ExtractedTask): Promise<CreateActionResul
     }
   }
 
-  // 2) 兜底：静默下载 VTODO .ics → 自动用 TB 打开 → 任务导入对话框
+  // 2) 兜底：静默下 VTODO .ics → 自动用 TB 打开 → 任务导入对话框 → 10s 自清
   try {
     const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@thunderclaw`;
     const due = task.dueISO ? fmtICSDate(task.dueISO, false) : '';
@@ -171,24 +196,11 @@ export async function createTask(task: ExtractedTask): Promise<CreateActionResul
     if (due) lines.push(`DUE:${due}`);
     if (task.notes) lines.push(`DESCRIPTION:${escapeICS(task.notes)}`);
     lines.push('END:VTODO', 'END:VCALENDAR');
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
-    const url = URL.createObjectURL(blob);
-    const filename = `thunderclaw-task-${Date.now()}.ics`;
-    const downloadId = await browser.downloads.download({
-      url,
-      filename,
-      saveAs: false,
-    });
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    try {
-      await browser.downloads.open(downloadId);
-    } catch (err) {
-      console.warn('[ThunderClaw] downloads.open failed, .ics 仍在 Downloads:', err);
-    }
+    await downloadAndOpenICS(`task-${Date.now()}.ics`, lines.join('\r\n'));
     return {
       ok: true,
       via: 'fallback-ics',
-      detail: '已生成 .ics，Thunderbird 会弹任务导入提示，点确认即可',
+      detail: 'Thunderbird 会弹任务导入提示，点确认即可',
     };
   } catch (err) {
     return {

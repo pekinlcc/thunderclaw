@@ -121,6 +121,10 @@ declare namespace browser {
     }): Promise<number>;
     // 用系统默认 app 打开下载好的文件（.ics → TB calendar import）
     function open(downloadId: number): Promise<void>;
+    // 删磁盘文件（下载条目仍在历史）
+    function removeFile(downloadId: number): Promise<void>;
+    // 删下载历史条目
+    function erase(query: { id?: number }): Promise<number[]>;
   }
 
   namespace compose {
