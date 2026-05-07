@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { tbStyles } from '../styles';
 import { SparkleIcon } from '../icons';
 import type {
+  ActionStep,
+  ActionStepKind,
   BriefingItem,
   EmailPreview,
   Pipeline,
@@ -45,73 +47,415 @@ const KIND_STYLES: Record<
   },
 };
 
-function ActionButton({
+// 把 steps 拼成 emoji 链描述: "💬 回复 · 📅 加日历 · ☑ 加待办"
+function stepsSubtitle(steps: ActionStep[]): string {
+  return steps.map((s) => `${KIND_STYLES[s.kind].icon} ${KIND_STYLES[s.kind].label}`).join(' · ');
+}
+
+// 步骤执行顺序：calendar / task / acknowledge 先（瞬时/后台），reply 永远最后（要等用户审稿）。
+function sortStepsForExecution(steps: ActionStep[]): ActionStep[] {
+  const order: Record<ActionStepKind, number> = {
+    calendar: 0,
+    task: 1,
+    acknowledge: 2,
+    reply: 99,
+  };
+  return [...steps].sort((a, b) => order[a.kind] - order[b.kind]);
+}
+
+// 每一步的执行结果（用于内联进度展示）
+type StepResult = {
+  kind: ActionStepKind;
+  detail: string;
+  state: 'pending' | 'running' | 'done' | 'error';
+  message?: string; // 显示给用户的简要状态文字
+};
+
+function IntentButton({
   action,
-  running,
+  isRunning,
   disabled,
-  onClick,
+  onPrimaryClick,
+  onTweakClick,
 }: {
   action: SuggestedAction;
-  running: boolean;
+  isRunning: boolean;
   disabled: boolean;
-  onClick: () => void;
+  onPrimaryClick: () => void;
+  onTweakClick: () => void;
 }) {
-  const kind = (action.kind ?? 'reply') as SuggestedActionKind;
-  const s = KIND_STYLES[kind];
+  const isComposite = action.steps.length >= 2;
+  const subtitle = stepsSubtitle(action.steps);
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled || running}
-      title={`${s.label}动作`}
+    <div
       style={{
-        padding: '7px 12px',
-        fontSize: 12,
-        background: running ? s.bg : '#FFF',
-        color: s.color,
-        border: `1px solid ${s.color}`,
-        borderRadius: 5,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        font: 'inherit',
-        opacity: disabled ? 0.45 : 1,
-        whiteSpace: 'nowrap',
         display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
+        alignItems: 'stretch',
+        border: `1px solid ${tbStyles.blue}`,
+        borderRadius: 5,
+        background: isRunning ? tbStyles.blueLight : '#FFF',
+        opacity: disabled ? 0.5 : 1,
+        marginRight: 8,
+        marginBottom: 8,
+        whiteSpace: 'nowrap',
       }}
     >
-      <span style={{ fontSize: 11 }}>{s.icon}</span>
-      <span>{running ? '处理中…' : action.label}</span>
-    </button>
+      <button
+        onClick={onPrimaryClick}
+        disabled={disabled || isRunning}
+        style={{
+          padding: '7px 12px',
+          fontSize: 12,
+          background: 'transparent',
+          color: tbStyles.blue,
+          border: 'none',
+          borderRadius: '4px 0 0 4px',
+          cursor: disabled || isRunning ? 'not-allowed' : 'pointer',
+          font: 'inherit',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+          <span style={{ fontWeight: 500, color: tbStyles.text }}>
+            {isRunning ? '执行中…' : action.label}
+          </span>
+          <span style={{ fontSize: 10.5, color: tbStyles.textMuted, marginTop: 1 }}>
+            {subtitle}
+          </span>
+        </span>
+      </button>
+      {isComposite && (
+        <button
+          onClick={onTweakClick}
+          disabled={disabled || isRunning}
+          title="调整步骤"
+          aria-label="调整步骤"
+          style={{
+            padding: '0 9px',
+            background: 'transparent',
+            color: tbStyles.blue,
+            border: 'none',
+            borderLeft: `1px solid ${tbStyles.blue}`,
+            borderRadius: '0 4px 4px 0',
+            cursor: disabled || isRunning ? 'not-allowed' : 'pointer',
+            font: 'inherit',
+            fontSize: 13,
+            opacity: 0.7,
+          }}
+        >
+          ⚙
+        </button>
+      )}
+    </div>
+  );
+}
+
+// 展开后的 checkbox 选择面板
+function StepsPanel({
+  action,
+  selected,
+  onToggle,
+  onSubmit,
+  onCancel,
+}: {
+  action: SuggestedAction;
+  selected: boolean[];
+  onToggle: (i: number) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const checkedCount = selected.filter(Boolean).length;
+  return (
+    <div
+      style={{
+        border: `1px solid ${tbStyles.blue}`,
+        borderRadius: 8,
+        background: tbStyles.blueLight,
+        marginBottom: 12,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          padding: '10px 14px',
+          borderBottom: `1px solid ${tbStyles.borderSoft}`,
+          background: '#FFF',
+          fontSize: 12,
+          fontWeight: 500,
+          color: tbStyles.text,
+        }}
+      >
+        调整 "{action.label}" 的步骤
+      </div>
+      <div style={{ padding: '8px 14px' }}>
+        {action.steps.map((step, i) => {
+          const s = KIND_STYLES[step.kind];
+          return (
+            <label
+              key={i}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 8,
+                padding: '6px 0',
+                cursor: 'pointer',
+                fontSize: 12.5,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selected[i]}
+                onChange={() => onToggle(i)}
+                style={{ marginTop: 3, flexShrink: 0 }}
+              />
+              <span style={{ flex: 1 }}>
+                <span style={{ color: s.color, fontWeight: 500 }}>
+                  {s.icon} {s.label}
+                </span>
+                {step.detail && (
+                  <span style={{ color: tbStyles.textMuted, marginLeft: 6 }}>
+                    {step.detail}
+                  </span>
+                )}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      <div
+        style={{
+          padding: '8px 12px',
+          borderTop: `1px solid ${tbStyles.borderSoft}`,
+          display: 'flex',
+          gap: 8,
+          background: '#FFF',
+        }}
+      >
+        <button
+          onClick={onSubmit}
+          disabled={checkedCount === 0}
+          style={{
+            padding: '6px 12px',
+            fontSize: 12,
+            background: checkedCount === 0 ? '#B5B5B5' : tbStyles.blue,
+            color: '#FFF',
+            border: 'none',
+            borderRadius: 4,
+            cursor: checkedCount === 0 ? 'not-allowed' : 'pointer',
+            font: 'inherit',
+          }}
+        >
+          执行 {checkedCount} 步
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            padding: '6px 12px',
+            fontSize: 12,
+            background: '#FFF',
+            color: tbStyles.text,
+            border: `1px solid ${tbStyles.border}`,
+            borderRadius: 4,
+            cursor: 'pointer',
+            font: 'inherit',
+          }}
+        >
+          取消
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// 进度展示：每一步状态 + reply 步骤的内联生成结果
+function ProgressPanel({
+  results,
+  generated,
+  onOpenCompose,
+  onCopyGenerated,
+  onRegenerate,
+  busy,
+}: {
+  results: StepResult[];
+  generated: { detail: string; text: string } | null;
+  onOpenCompose: () => void;
+  onCopyGenerated: () => void;
+  onRegenerate: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${tbStyles.borderSoft}`,
+        borderRadius: 8,
+        background: '#FBFBFC',
+        marginBottom: 12,
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{ padding: '10px 14px' }}>
+        {results.map((r, i) => {
+          const s = KIND_STYLES[r.kind];
+          const icon =
+            r.state === 'done' ? '✓' :
+            r.state === 'error' ? '✗' :
+            r.state === 'running' ? '⏳' : '·';
+          const color =
+            r.state === 'done' ? '#2A8B3F' :
+            r.state === 'error' ? '#C44A2C' :
+            r.state === 'running' ? tbStyles.blue : tbStyles.textFaint;
+          return (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 12,
+                padding: '4px 0',
+                color: r.state === 'pending' ? tbStyles.textFaint : tbStyles.text,
+              }}
+            >
+              <span style={{ color, width: 14, textAlign: 'center' }}>{icon}</span>
+              <span style={{ fontSize: 11 }}>{s.icon}</span>
+              <span style={{ flex: 1 }}>
+                <span style={{ color: s.color, fontWeight: 500 }}>{s.label}</span>
+                {r.message && (
+                  <span style={{ color: tbStyles.textMuted, marginLeft: 6 }}>
+                    {r.message}
+                  </span>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {generated && (
+        <>
+          <div
+            style={{
+              padding: '8px 14px',
+              fontSize: 11,
+              color: tbStyles.textMuted,
+              borderTop: `1px solid ${tbStyles.borderSoft}`,
+              background: '#FFF',
+            }}
+          >
+            生成的回复（请检查后再发送）
+          </div>
+          <div
+            style={{
+              padding: '12px 14px',
+              fontSize: 13,
+              lineHeight: 1.65,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              background: '#FFF',
+            }}
+          >
+            {generated.text}
+          </div>
+          <div
+            style={{
+              padding: '8px 12px',
+              borderTop: `1px solid ${tbStyles.borderSoft}`,
+              display: 'flex',
+              gap: 8,
+              background: '#FFF',
+            }}
+          >
+            <button
+              onClick={onOpenCompose}
+              disabled={busy}
+              style={{
+                padding: '6px 12px',
+                fontSize: 12,
+                background: tbStyles.blue,
+                color: '#FFF',
+                border: 'none',
+                borderRadius: 4,
+                cursor: busy ? 'wait' : 'pointer',
+                font: 'inherit',
+              }}
+            >
+              在撰写窗口打开
+            </button>
+            <button
+              onClick={onCopyGenerated}
+              style={{
+                padding: '6px 12px',
+                fontSize: 12,
+                background: '#FFF',
+                color: tbStyles.text,
+                border: `1px solid ${tbStyles.border}`,
+                borderRadius: 4,
+                cursor: 'pointer',
+                font: 'inherit',
+              }}
+            >
+              复制
+            </button>
+            <button
+              onClick={onRegenerate}
+              disabled={busy}
+              style={{
+                padding: '6px 12px',
+                fontSize: 12,
+                background: '#FFF',
+                color: tbStyles.text,
+                border: `1px solid ${tbStyles.border}`,
+                borderRadius: 4,
+                cursor: busy ? 'wait' : 'pointer',
+                font: 'inherit',
+              }}
+            >
+              重新生成
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
 function ActionsBox({
   item,
-  running,
-  actionError,
+  runState,
   generated,
   busy,
-  onRunReply,
-  onRunCalendar,
-  onRunTask,
-  onAck,
+  expandedActionIdx,
+  expandedSelected,
+  onExpand,
+  onCloseExpand,
+  onToggleStep,
+  onRunIntent,
   onOpenCompose,
   onCopyGenerated,
+  onRegenerate,
 }: {
   item: BriefingItem;
-  running: string | null;
-  actionError: string | null;
-  generated: { actionLabel: string; text: string } | null;
+  runState: {
+    actionIdx: number;
+    results: StepResult[];
+    error: string | null;
+  } | null;
+  generated: { detail: string; text: string } | null;
   busy: boolean;
-  onRunReply: (label: string) => void;
-  onRunCalendar: (label: string) => void;
-  onRunTask: (label: string) => void;
-  onAck: () => void;
+  expandedActionIdx: number | null;
+  expandedSelected: boolean[];
+  onExpand: (actionIdx: number) => void;
+  onCloseExpand: () => void;
+  onToggleStep: (i: number) => void;
+  // 执行某个 intent。stepIndexes 为 null 时执行全部 steps
+  onRunIntent: (actionIdx: number, stepIndexes: number[] | null) => void;
   onOpenCompose: () => void;
   onCopyGenerated: () => void;
+  onRegenerate: () => void;
 }) {
-  // Pulse agent 直接输出 kind=acknowledge 的动作，UI 不再合成
-  const displayActions: SuggestedAction[] = item.suggestedActions;
+  const displayActions = item.suggestedActions;
 
   if (displayActions.length === 0) {
     return (
@@ -131,164 +475,106 @@ function ActionsBox({
     );
   }
 
-  function handleClick(action: SuggestedAction) {
-    const kind = action.kind ?? 'reply';
-    if (kind === 'reply') onRunReply(action.label);
-    else if (kind === 'calendar') onRunCalendar(action.label);
-    else if (kind === 'task') onRunTask(action.label);
-    else if (kind === 'acknowledge') onAck();
-  }
-
   return (
-    <div
-      style={{
-        border: `1px solid ${tbStyles.borderSoft}`,
-        borderRadius: 8,
-        marginBottom: 14,
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          padding: '10px 16px',
-          borderBottom: `1px solid ${tbStyles.borderSoft}`,
-          background: '#FFF',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-        }}
-      >
-        <span style={{ color: tbStyles.blue, display: 'inline-flex' }}>
-          <SparkleIcon size={13} color={tbStyles.blue} />
-        </span>
-        <span
-          style={{
-            fontSize: 11.5,
-            fontWeight: 600,
-            color: tbStyles.blue,
-            textTransform: 'uppercase',
-            letterSpacing: '.04em',
+    <div style={{ marginBottom: 14 }}>
+      {/* 展开了的 step 调整面板（直接顶到 actions 上方） */}
+      {expandedActionIdx !== null && (
+        <StepsPanel
+          action={displayActions[expandedActionIdx]!}
+          selected={expandedSelected}
+          onToggle={onToggleStep}
+          onSubmit={() => {
+            const idx = expandedActionIdx;
+            const selectedIdxs = expandedSelected
+              .map((v, i) => (v ? i : -1))
+              .filter((i) => i >= 0);
+            onCloseExpand();
+            onRunIntent(idx, selectedIdxs);
           }}
-        >
-          建议处置方式
-        </span>
-        <span
-          style={{ fontSize: 11, color: tbStyles.textFaint, marginLeft: 'auto' }}
-        >
-          点击执行 · 颜色按动作类型区分
-        </span>
-      </div>
+          onCancel={onCloseExpand}
+        />
+      )}
+
+      {/* intent 按钮组 */}
       <div
         style={{
-          padding: '12px 16px',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 8,
+          border: `1px solid ${tbStyles.borderSoft}`,
+          borderRadius: 8,
+          background: '#FFF',
+          overflow: 'hidden',
         }}
       >
-        {displayActions.map((action, i) => (
-          <ActionButton
-            key={`${action.label}-${i}`}
-            action={action}
-            running={running === action.label}
-            disabled={(running !== null || busy) && running !== action.label}
-            onClick={() => handleClick(action)}
-          />
-        ))}
-      </div>
-      {(generated || actionError) && (
         <div
           style={{
-            borderTop: `1px solid ${tbStyles.borderSoft}`,
-            background: '#FBFBFC',
+            padding: '10px 16px',
+            borderBottom: `1px solid ${tbStyles.borderSoft}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
           }}
         >
-          {actionError && (
-            <div style={{ padding: '12px 16px', color: '#C44A2C', fontSize: 12 }}>
-              出错：{actionError}
+          <span style={{ color: tbStyles.blue, display: 'inline-flex' }}>
+            <SparkleIcon size={13} color={tbStyles.blue} />
+          </span>
+          <span
+            style={{
+              fontSize: 11.5,
+              fontWeight: 600,
+              color: tbStyles.blue,
+              textTransform: 'uppercase',
+              letterSpacing: '.04em',
+            }}
+          >
+            你打算怎么处理
+          </span>
+          <span
+            style={{ fontSize: 11, color: tbStyles.textFaint, marginLeft: 'auto' }}
+          >
+            点 ⚙ 调整步骤
+          </span>
+        </div>
+        <div style={{ padding: '12px 16px 4px' }}>
+          {displayActions.map((action, i) => (
+            <IntentButton
+              key={`${action.label}-${i}`}
+              action={action}
+              isRunning={runState?.actionIdx === i}
+              disabled={
+                (runState !== null && runState.actionIdx !== i) ||
+                busy ||
+                expandedActionIdx !== null
+              }
+              onPrimaryClick={() => onRunIntent(i, null)}
+              onTweakClick={() => onExpand(i)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* 执行进度 / 生成的回复区 */}
+      {runState && (
+        <div style={{ marginTop: 8 }}>
+          <ProgressPanel
+            results={runState.results}
+            generated={generated}
+            onOpenCompose={onOpenCompose}
+            onCopyGenerated={onCopyGenerated}
+            onRegenerate={onRegenerate}
+            busy={busy}
+          />
+          {runState.error && (
+            <div
+              style={{
+                background: '#FEF1ED',
+                color: '#C44A2C',
+                padding: '8px 14px',
+                borderRadius: 6,
+                fontSize: 12,
+                marginTop: 6,
+              }}
+            >
+              ⚠ {runState.error}
             </div>
-          )}
-          {generated && (
-            <>
-              <div
-                style={{
-                  padding: '8px 16px',
-                  fontSize: 11,
-                  color: tbStyles.textMuted,
-                  borderBottom: `1px solid ${tbStyles.borderSoft}`,
-                }}
-              >
-                基于 "{generated.actionLabel}" 生成的回复
-              </div>
-              <div
-                style={{
-                  padding: '14px 16px',
-                  fontSize: 13,
-                  lineHeight: 1.65,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {generated.text}
-              </div>
-              <div
-                style={{
-                  padding: '8px 12px',
-                  borderTop: `1px solid ${tbStyles.borderSoft}`,
-                  display: 'flex',
-                  gap: 8,
-                  background: '#FFF',
-                }}
-              >
-                <button
-                  onClick={onOpenCompose}
-                  disabled={busy}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: 12,
-                    background: tbStyles.blue,
-                    color: '#FFF',
-                    border: 'none',
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                    font: 'inherit',
-                  }}
-                >
-                  在撰写窗口打开
-                </button>
-                <button
-                  onClick={onCopyGenerated}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: 12,
-                    background: '#FFF',
-                    color: tbStyles.text,
-                    border: `1px solid ${tbStyles.border}`,
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                    font: 'inherit',
-                  }}
-                >
-                  复制
-                </button>
-                <button
-                  onClick={() => onRunReply(generated.actionLabel)}
-                  disabled={running !== null}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: 12,
-                    background: '#FFF',
-                    color: tbStyles.text,
-                    border: `1px solid ${tbStyles.border}`,
-                    borderRadius: 4,
-                    cursor: running !== null ? 'not-allowed' : 'pointer',
-                    font: 'inherit',
-                  }}
-                >
-                  重新生成
-                </button>
-              </div>
-            </>
           )}
         </div>
       )}
@@ -792,33 +1078,6 @@ export function BriefingScreen({
     );
   }
 
-  async function ack() {
-    if (!item) return;
-    setBusy(true);
-    try {
-      const res = await ui.acknowledge(item.id);
-      const a = res.archive;
-      if (!a) {
-        // 没邮件 ID 关联，单纯标记 dismissed
-        showToast('success', '已从简报移除');
-      } else if (a.errors.length === 0) {
-        showToast(
-          'success',
-          `已标为已读 · 归档 ${a.archived} 封${a.marked !== a.archived ? `（标读 ${a.marked} 封）` : ''}`,
-        );
-      } else if (a.archived === 0) {
-        showToast('warning', `已标读 ${a.marked} 封，但归档失败：${a.errors[0]}`);
-      } else {
-        showToast(
-          'warning',
-          `归档了 ${a.archived} 封，${a.errors.length} 封出错（${a.errors[0]}）`,
-        );
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function mute() {
     if (!item) return;
     setBusy(true);
@@ -830,75 +1089,141 @@ export function BriefingScreen({
     }
   }
 
-  // 当前选中的卡里：用户点过的动作 label + AI 写出的回复正文
+  // ─── intent 执行状态 ──────────────────────────────
+  // 用户点过哪一组 intent，每一步的状态如何
+  const [runState, setRunState] = useState<{
+    actionIdx: number;
+    results: StepResult[];
+    error: string | null;
+  } | null>(null);
+  // reply 步骤生成的回复正文（已审稿区域）
   const [generated, setGenerated] = useState<{
-    actionLabel: string;
+    detail: string;
     text: string;
   } | null>(null);
-  // 正在跑哪个 action（label 唯一定位）+ 错误
-  const [running, setRunning] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  // 当前展开 ⚙ 调整面板的 actionIdx + 该 intent 各 step 是否选中
+  const [expandedActionIdx, setExpandedActionIdx] = useState<number | null>(null);
+  const [expandedSelected, setExpandedSelected] = useState<boolean[]>([]);
 
   // item 切换时清掉跨 item 的状态
   useEffect(() => {
+    setRunState(null);
     setGenerated(null);
-    setRunning(null);
-    setActionError(null);
+    setExpandedActionIdx(null);
+    setExpandedSelected([]);
   }, [item?.id]);
 
-  async function runReplyAction(actionLabel: string) {
+  function openExpand(actionIdx: number) {
     if (!item) return;
-    setRunning(actionLabel);
-    setActionError(null);
-    try {
-      const res = await ui.generateReply(item.id, actionLabel);
-      if (res.ok && res.text) {
-        setGenerated({ actionLabel, text: res.text });
-      } else {
-        setActionError(res.error || '生成失败');
-      }
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRunning(null);
-    }
+    const action = item.suggestedActions[actionIdx];
+    if (!action) return;
+    setExpandedActionIdx(actionIdx);
+    setExpandedSelected(action.steps.map(() => true));
   }
 
-  async function runCalendarAction(actionLabel: string) {
-    if (!item) return;
-    setRunning(actionLabel);
-    setActionError(null);
-    try {
-      const res = await ui.createCalendarEvent(item.id, actionLabel);
-      if (res.ok && res.result) {
-        showToast('success', `✓ ${res.result.detail}`);
-      } else {
-        const msg = res.result?.detail || res.error || '创建失败';
-        showToast('error', `日历创建失败：${msg}`);
-      }
-    } catch (err) {
-      showToast('error', `日历创建失败：${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setRunning(null);
-    }
+  function closeExpand() {
+    setExpandedActionIdx(null);
+    setExpandedSelected([]);
   }
 
-  async function runTaskAction(actionLabel: string) {
+  function toggleStepSelection(i: number) {
+    setExpandedSelected((sel) => sel.map((v, j) => (j === i ? !v : v)));
+  }
+
+  // 执行一个 intent 的指定 steps（stepIdxs=null 表示执行全部）
+  async function runIntent(actionIdx: number, stepIdxs: number[] | null) {
     if (!item) return;
-    setRunning(actionLabel);
-    setActionError(null);
+    const action = item.suggestedActions[actionIdx];
+    if (!action) return;
+    const selectedSteps =
+      stepIdxs === null
+        ? action.steps
+        : stepIdxs.map((i) => action.steps[i]).filter((s): s is ActionStep => !!s);
+    if (selectedSteps.length === 0) return;
+    // 排序：calendar/task/acknowledge 先，reply 最后
+    const orderedSteps = sortStepsForExecution(selectedSteps);
+
+    // 初始化进度数组 — 全 pending
+    const initialResults: StepResult[] = orderedSteps.map((s) => ({
+      kind: s.kind,
+      detail: s.detail,
+      state: 'pending',
+    }));
+    setRunState({ actionIdx, results: initialResults, error: null });
+    setGenerated(null);
+    setBusy(true);
+
+    let progress = [...initialResults];
+    function update(i: number, patch: Partial<StepResult>) {
+      progress = progress.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
+      setRunState((rs) => (rs ? { ...rs, results: [...progress] } : rs));
+    }
+
     try {
-      const res = await ui.createTask(item.id, actionLabel);
-      if (res.ok && res.result) {
-        showToast('success', `✓ ${res.result.detail}`);
-      } else {
-        const msg = res.result?.detail || res.error || '创建失败';
-        showToast('error', `任务创建失败：${msg}`);
+      for (let i = 0; i < orderedSteps.length; i++) {
+        const step = orderedSteps[i]!;
+        update(i, { state: 'running' });
+        try {
+          if (step.kind === 'calendar') {
+            const res = await ui.createCalendarEvent(item.id, step.detail);
+            if (res.ok && res.result) {
+              update(i, { state: 'done', message: res.result.detail });
+              showToast('success', `${KIND_STYLES.calendar.icon} ${res.result.detail}`);
+            } else {
+              const msg = res.result?.detail || res.error || '创建失败';
+              update(i, { state: 'error', message: msg });
+              showToast('error', `日历创建失败：${msg}`);
+            }
+          } else if (step.kind === 'task') {
+            const res = await ui.createTask(item.id, step.detail);
+            if (res.ok && res.result) {
+              update(i, { state: 'done', message: res.result.detail });
+              showToast('success', `${KIND_STYLES.task.icon} ${res.result.detail}`);
+            } else {
+              const msg = res.result?.detail || res.error || '创建失败';
+              update(i, { state: 'error', message: msg });
+              showToast('error', `任务创建失败：${msg}`);
+            }
+          } else if (step.kind === 'acknowledge') {
+            const res = await ui.acknowledge(item.id);
+            const a = res.archive;
+            if (a && a.errors.length === 0) {
+              update(i, {
+                state: 'done',
+                message: `已标读 · 归档 ${a.archived} 封`,
+              });
+              showToast(
+                'success',
+                `${KIND_STYLES.acknowledge.icon} 已标已读 · 归档 ${a.archived} 封`,
+              );
+            } else if (a && a.archived === 0) {
+              update(i, { state: 'error', message: `标读 ${a.marked}，归档失败` });
+              showToast('warning', `已标读 ${a.marked} 封，归档失败：${a.errors[0]}`);
+            } else {
+              update(i, { state: 'done', message: '已从简报移除' });
+              showToast('success', '已从简报移除');
+            }
+          } else if (step.kind === 'reply') {
+            // reply 永远最后跑：生成正文 → 内联展示 → 等用户审稿后开撰写窗口
+            const res = await ui.generateReply(item.id, step.detail);
+            if (res.ok && res.text) {
+              setGenerated({ detail: step.detail, text: res.text });
+              update(i, { state: 'done', message: '回复已生成，请检查后发送' });
+              showToast('success', `${KIND_STYLES.reply.icon} 回复已生成，请检查`);
+            } else {
+              update(i, { state: 'error', message: res.error || '生成失败' });
+              showToast('error', `回复生成失败：${res.error || '未知错误'}`);
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          update(i, { state: 'error', message: msg });
+          showToast('error', `${KIND_STYLES[step.kind].label}失败：${msg}`);
+          // 单步失败不中断其余步骤——其它步骤继续跑
+        }
       }
-    } catch (err) {
-      showToast('error', `任务创建失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setRunning(null);
+      setBusy(false);
     }
   }
 
@@ -910,7 +1235,7 @@ export function BriefingScreen({
       if (!res.ok) {
         showToast('error', `打开撰写窗口失败：${res.error || '未知错误'}`);
       }
-      // 成功不弹 toast——TB 会真的开撰写窗口，那就是反馈
+      // 成功不弹 toast——TB 会开撰写窗口，那就是反馈
     } finally {
       setBusy(false);
     }
@@ -924,6 +1249,22 @@ export function BriefingScreen({
     } catch (err) {
       showToast('error', `复制失败：${err instanceof Error ? err.message : String(err)}`);
       console.warn('clipboard:', err);
+    }
+  }
+
+  async function regenerateReply() {
+    if (!item || !generated) return;
+    setBusy(true);
+    try {
+      const res = await ui.generateReply(item.id, generated.detail);
+      if (res.ok && res.text) {
+        setGenerated({ detail: generated.detail, text: res.text });
+        showToast('success', '已重新生成');
+      } else {
+        showToast('error', `重新生成失败：${res.error || '未知错误'}`);
+      }
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1105,20 +1446,23 @@ export function BriefingScreen({
 
           <WhatHappenedSection item={item} />
 
-          {/* 建议处置方式：所有动作（reply / calendar / task / 我已知晓）都在这一个卡里
-               点击后视 kind 走不同处理路径 */}
+          {/* 建议处置方式：每个 SuggestedAction = 一个用户决定，
+               点击触发其内部 steps 顺序执行（calendar/task/ack 先，reply 最后）。
+               ⚙ 展开可调整步骤 checkbox。 */}
           <ActionsBox
             item={item}
-            running={running}
-            actionError={actionError}
+            runState={runState}
             generated={generated}
             busy={busy}
-            onRunReply={runReplyAction}
-            onRunCalendar={runCalendarAction}
-            onRunTask={runTaskAction}
-            onAck={ack}
+            expandedActionIdx={expandedActionIdx}
+            expandedSelected={expandedSelected}
+            onExpand={openExpand}
+            onCloseExpand={closeExpand}
+            onToggleStep={toggleStepSelection}
+            onRunIntent={runIntent}
             onOpenCompose={openComposeWithGenerated}
             onCopyGenerated={copyGenerated}
+            onRegenerate={regenerateReply}
           />
 
           {item.reason && (

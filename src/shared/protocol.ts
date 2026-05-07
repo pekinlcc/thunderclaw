@@ -92,19 +92,34 @@ export type Pipeline =
   | { phase: 'done'; finishedAt: number }
   | { phase: 'error'; message: string };
 
-// 一个建议动作。所有"用户可以做的事"都统一用 SuggestedAction 表达，
-// 由 Pulse agent 一次性输出，UI 只管按 kind 渲染。
-//   label = 按钮上的中文短语
-//   kind  = 动作类型，决定点击后的处理路径：
-//           - 'reply'        → Writer agent 生成回复 → 用户在撰写窗口里发
-//           - 'calendar'     → Event extractor 解析时间地点 → 创建日历事件
-//           - 'task'         → Task extractor 解析待办 → 创建 Thunderbird 任务
-//           - 'acknowledge'  → 标记已读 + 归档 + 从简报移除
-export type SuggestedActionKind = 'reply' | 'calendar' | 'task' | 'acknowledge';
-export type SuggestedAction = {
-  label: string;
-  kind?: SuggestedActionKind; // 缺省 'reply' 兼容旧数据
+// 一个建议动作 = 用户视角的一个"决定"。
+// 比如对于"K 年级说明会"邮件：
+//   "我要参加" = SuggestedAction { label: "我要参加", steps: [reply, calendar, task] }
+//   "我不参加" = SuggestedAction { label: "我不参加", steps: [reply, acknowledge] }
+//   "我已知晓" = SuggestedAction { label: "我已知晓", steps: [acknowledge] }
+//
+// UI 把每个 SuggestedAction 渲染成一个按钮。点击 → 顺序执行内部 steps：
+//   非 reply 步骤静默后台跑（toast 提示）
+//   reply 步骤永远放最后，生成正文后内联展开等用户审稿 → 在撰写窗口打开
+//
+// 多步 (≥2 steps) 的按钮带个 ⚙ 角标，点开能用 checkbox 调整哪几步执行。
+export type ActionStepKind = 'reply' | 'calendar' | 'task' | 'acknowledge';
+export type ActionStep = {
+  kind: ActionStepKind;
+  // 喂给对应 agent 的 prompt 输入：
+  //   - reply 的 detail: 回复方向（如"回复确认参加 + 询问尺寸"）
+  //   - calendar 的 detail: 含日期/时间/标题/地点的描述
+  //   - task 的 detail: 待办描述
+  //   - acknowledge 的 detail: 一般为空，UI 不展示
+  detail: string;
 };
+export type SuggestedAction = {
+  label: string; // 用户视角的决定，如"我要参加"
+  steps: ActionStep[];
+};
+
+// 兼容老数据的 kind 别名
+export type SuggestedActionKind = ActionStepKind;
 
 export type BriefingItem = {
   id: string;

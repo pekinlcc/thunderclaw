@@ -785,13 +785,26 @@ const MOCK_ITEMS = [
     title: '需要回复 期中学术进度报告',
     summary: '老师在 11/26 询问期中学术进度报告的填写情况，附件中包含 6 项评估指标。',
     deadline: '建议今日内回复', emails: 5,
-    actionType: 'reply',
     suggestedActions: [
-      { kind: 'reply',    label: '回复确认本周内提交' },
-      { kind: 'reply',    label: '回复请求延期到下周' },
-      { kind: 'task',     label: '加任务 11/30 前填完报告' },
+      {
+        label: '我会本周内提交',
+        steps: [
+          { kind: 'task',  detail: '加任务: 11/30 周日前完成期中学术进度报告 6 项指标' },
+          { kind: 'reply', detail: '回复王老师: 确认本周内会提交，按 6 项指标分别回应' },
+        ],
+      },
+      {
+        label: '我请求延期',
+        steps: [
+          { kind: 'reply', detail: '回复王老师: 这周工作较忙，能否延期到下周一提交' },
+        ],
+      },
+      {
+        label: '我已知晓',
+        steps: [{ kind: 'acknowledge', detail: '' }],
+      },
     ],
-    reason: '上一封邮件你提到"周末填写"，今天已是 11/27 周三，建议今日内回复以避免拖延。语气参考过往沟通：简短、直接、保留中文敬语。',
+    reason: '上一封邮件你提到"周末填写"，今天已是 11/27 周三，建议本周内回复以避免拖延。语气参考过往沟通：简短、直接、保留中文敬语。',
   },
   {
     id: 2, priority: 'high',
@@ -800,12 +813,32 @@ const MOCK_ITEMS = [
     title: '12/10 PK Spring 演出确认',
     summary: 'Sarah 在 11/26 通知 12/10 18:30 校礼堂的 PK Spring 演出，需要在 12/05 前回复是否参加并选择服装尺寸。',
     deadline: '12/05 截止 · 还剩 8 天', emails: 12,
-    actionType: 'reply',
     suggestedActions: [
-      { kind: 'reply',    label: '回复确认参加 + 尺寸 Youth Medium' },
-      { kind: 'reply',    label: '回复婉拒本次演出' },
-      { kind: 'calendar', label: '加日历 12/10 18:30 PK Spring 校礼堂' },
-      { kind: 'task',     label: '加任务 12/05 前确认尺寸' },
+      {
+        label: '我要参加',
+        steps: [
+          { kind: 'calendar', detail: '加日历: PK Spring 演出, 12/10 18:30, 校礼堂' },
+          { kind: 'task',     detail: '加任务: 12/05 前回复确认参加并报尺寸' },
+          { kind: 'reply',    detail: '回复 Sarah: 确认孩子参加 12/10 PK Spring 演出，尺寸 Youth Medium' },
+        ],
+      },
+      {
+        label: '我不参加',
+        steps: [
+          { kind: 'reply',       detail: '回复 Sarah: 抱歉孩子无法参加本次演出，是否会有补办场或录像' },
+          { kind: 'acknowledge', detail: '' },
+        ],
+      },
+      {
+        label: '咨询服装样式',
+        steps: [
+          { kind: 'reply', detail: '回复 Sarah 反问：服装具体样式如何，是否提供 sample，是否可换尺寸' },
+        ],
+      },
+      {
+        label: '我已知晓',
+        steps: [{ kind: 'acknowledge', detail: '' }],
+      },
     ],
     reason: '邮件含具体时间（12/10 18:30）和地点（校礼堂），需要加日历；同时有 12/05 截止的回复要求，建议同时加任务避免漏提交。',
   },
@@ -817,7 +850,10 @@ const MOCK_ITEMS = [
     summary: '你参与的某项投资在 11/27 完成结算，可以查看最终文件和持仓证明。',
     deadline: '无紧急时限', emails: 3,
     suggestedActions: [
-      { kind: 'acknowledge', label: '我已知晓 - 投资完成通知' },
+      {
+        label: '我已知晓',
+        steps: [{ kind: 'acknowledge', detail: '' }],
+      },
     ],
     reason: '单次通知类邮件，含查看文档链接。无需回复，标记为已知晓即可。',
   },
@@ -829,8 +865,17 @@ const MOCK_ITEMS = [
     summary: '11/26 通知服务条款变更，将于 12/26 生效。变更涉及数据使用与会员权益条款。',
     deadline: '12/26 生效', emails: 1,
     suggestedActions: [
-      { kind: 'acknowledge', label: '我已知晓 - 条款更新' },
-      { kind: 'task',        label: '加任务 12/26 前评估是否影响使用' },
+      {
+        label: '在 12/26 前评估影响',
+        steps: [
+          { kind: 'task',        detail: '加任务: 12/26 前评估服务条款变更对使用是否有影响' },
+          { kind: 'acknowledge', detail: '' },
+        ],
+      },
+      {
+        label: '我已知晓',
+        steps: [{ kind: 'acknowledge', detail: '' }],
+      },
     ],
     reason: '通用条款更新邮件，群发模板，但建议加一个评估任务避免到期才发现影响。',
   },
@@ -842,7 +887,10 @@ const MOCK_ITEMS = [
     summary: '11/24 出具的月度对账单。包含本月持仓变动和利息计算。',
     deadline: null, emails: 1,
     suggestedActions: [
-      { kind: 'acknowledge', label: '我已知晓 - 月结对账单' },
+      {
+        label: '我已知晓',
+        steps: [{ kind: 'acknowledge', detail: '' }],
+      },
     ],
     reason: '系统自动月结邮件。建议归档到"账单"文件夹。',
   },
@@ -864,7 +912,10 @@ const MOCK_ITEMS = [
     summary: '11/27 03:08 你的账户在新设备上登录。',
     deadline: null, emails: 1,
     suggestedActions: [
-      { kind: 'acknowledge', label: '我已知晓 - 是我本人登录' },
+      {
+        label: '是我本人登录，知晓',
+        steps: [{ kind: 'acknowledge', detail: '' }],
+      },
     ],
     reason: '系统通知邮件。如不是本人操作请尽快修改密码。',
   },
@@ -1010,10 +1061,10 @@ function BriefingC() {
 
           {(() => {
             const KIND = {
-              reply:       { color: '#1373D9', icon: '💬' },
-              calendar:    { color: '#2A8B3F', icon: '📅' },
-              task:        { color: '#6B4B8E', icon: '☑' },
-              acknowledge: { color: '#A37911', icon: '✓' },
+              reply:       { color: '#1373D9', icon: '💬', label: '回复' },
+              calendar:    { color: '#2A8B3F', icon: '📅', label: '加日历' },
+              task:        { color: '#6B4B8E', icon: '☑', label: '加任务' },
+              acknowledge: { color: '#A37911', icon: '✓', label: '已读+归档' },
             };
             const display = item.suggestedActions;
             if (display.length === 0) {
@@ -1028,7 +1079,7 @@ function BriefingC() {
             return (
               <div style={{
                 border: `1px solid ${tbStyles.borderSoft}`,
-                borderRadius: 8, marginBottom: 14, overflow: 'hidden',
+                borderRadius: 8, marginBottom: 14, overflow: 'hidden', background: '#FFF',
               }}>
                 <div style={{
                   padding: '10px 16px',
@@ -1038,30 +1089,45 @@ function BriefingC() {
                 }}>
                   <span style={{ color: tbStyles.blue, display: 'inline-flex' }}><SidebarIcon name="sparkle" size={13} /></span>
                   <span style={{ fontSize: 11.5, fontWeight: 600, color: tbStyles.blue, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-                    建议处置方式
+                    你打算怎么处理
                   </span>
                   <div style={{ flex: 1 }}/>
-                  <span style={{ fontSize: 11, color: tbStyles.textFaint }}>点击执行 · 颜色按动作类型区分</span>
+                  <span style={{ fontSize: 11, color: tbStyles.textFaint }}>点 ⚙ 调整步骤</span>
                 </div>
-                <div style={{
-                  padding: '12px 16px',
-                  display: 'flex', flexWrap: 'wrap', gap: 8,
-                }}>
-                  {display.map((a, i) => {
-                    const k = KIND[a.kind || 'reply'];
+                <div style={{ padding: '12px 16px 4px' }}>
+                  {display.map((action, i) => {
+                    const subtitle = action.steps.map(s => `${KIND[s.kind].icon} ${KIND[s.kind].label}`).join(' · ');
+                    const isComposite = action.steps.length >= 2;
                     return (
-                      <button key={i} style={{
-                        padding: '7px 12px', fontSize: 12,
-                        background: '#FFF',
-                        color: k.color,
-                        border: `1px solid ${k.color}`,
-                        borderRadius: 5, cursor: 'pointer', font: 'inherit',
-                        whiteSpace: 'nowrap',
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                      <span key={i} style={{
+                        display: 'inline-flex', alignItems: 'stretch',
+                        border: `1px solid ${tbStyles.blue}`,
+                        borderRadius: 5, background: '#FFF',
+                        marginRight: 8, marginBottom: 8, whiteSpace: 'nowrap',
                       }}>
-                        <span style={{ fontSize: 11 }}>{k.icon}</span>
-                        <span>{a.label}</span>
-                      </button>
+                        <button style={{
+                          padding: '7px 12px', fontSize: 12,
+                          background: 'transparent', color: tbStyles.blue,
+                          border: 'none', borderRadius: '4px 0 0 4px',
+                          cursor: 'pointer', font: 'inherit',
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          textAlign: 'left',
+                        }}>
+                          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                            <span style={{ fontWeight: 500, color: tbStyles.text }}>{action.label}</span>
+                            <span style={{ fontSize: 10.5, color: tbStyles.textMuted, marginTop: 1 }}>{subtitle}</span>
+                          </span>
+                        </button>
+                        {isComposite && (
+                          <button title="调整步骤" style={{
+                            padding: '0 9px', background: 'transparent',
+                            color: tbStyles.blue, border: 'none',
+                            borderLeft: `1px solid ${tbStyles.blue}`,
+                            borderRadius: '0 4px 4px 0',
+                            cursor: 'pointer', font: 'inherit', fontSize: 13, opacity: 0.7,
+                          }}>⚙</button>
+                        )}
+                      </span>
                     );
                   })}
                 </div>
