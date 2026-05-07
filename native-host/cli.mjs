@@ -2,8 +2,8 @@
 
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { homedir, tmpdir, platform } from 'node:os';
 import { join } from 'node:path';
 
 const execFileP = promisify(execFile);
@@ -214,4 +214,50 @@ export function callLLM({ engine, prompt, systemPrompt, timeoutMs }) {
   if (engine === 'claude') return callClaude({ prompt, systemPrompt, timeoutMs });
   if (engine === 'codex') return callCodex({ prompt, systemPrompt, timeoutMs });
   throw new Error(`unknown engine: ${engine}`);
+}
+
+// 把 .ics 内容直接喂给 Thunderbird 处理（绕过系统默认 .ics handler，
+// Mac 上要的就是不让 Apple Calendar 来抢这一脚）。
+// 流程：
+//   写到 tmp 文件 → 用 OS 对应命令显式让 TB 打开 → TB 自己弹"导入事件"对话框
+//   用户点一下"导入"就完事，不需要双击 / 选 app / 拖文件
+// 60 秒后清理 tmp 文件——TB 此时早把内容读进对话框了。
+export function openCalendarICS({ ics }) {
+  if (!ics || typeof ics !== 'string') {
+    throw new Error('openCalendarICS: ics content required');
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'thunderclaw-cal-'));
+  const file = join(dir, `event-${Date.now()}.ics`);
+  writeFileSync(file, ics);
+
+  let cmd, args;
+  switch (platform()) {
+    case 'darwin':
+      // -a 强制指定用 TB 打开，无视 LaunchServices 把 .ics 关联到哪
+      cmd = 'open';
+      args = ['-a', 'Thunderbird', file];
+      break;
+    case 'win32':
+      // start "" 启动器，让 cmd 识别 thunderbird.exe；带空 title 避免误吞参数
+      cmd = 'cmd';
+      args = ['/c', 'start', '', 'thunderbird.exe', file];
+      break;
+    default:
+      // Linux：thunderbird 直接接 .ics 路径会触发日历导入
+      cmd = 'thunderbird';
+      args = [file];
+  }
+
+  const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+  child.on('error', (err) => {
+    process.stderr.write(`[thunderclaw-host] openCalendarICS spawn error: ${err.message}\n`);
+  });
+  child.unref();
+
+  // 给 TB 60s 把文件读进对话框，然后清掉 tmp
+  setTimeout(() => {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }, 60_000).unref();
+
+  return { ok: true };
 }

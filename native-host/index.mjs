@@ -3,7 +3,7 @@
 // 与扩展通过 stdio + 4-byte length-prefix 协议通信。
 
 import { readMessages, writeMessage } from './protocol.mjs';
-import { probeAll, callLLM } from './cli.mjs';
+import { probeAll, callLLM, openCalendarICS } from './cli.mjs';
 import { VERSION, PROTOCOL_VERSION } from './version.mjs';
 
 function log(...args) {
@@ -46,6 +46,12 @@ async function handle(req) {
             timeoutMs: params.timeoutMs,
           }),
         };
+        break;
+      case 'open-calendar-ics':
+        // 写 ics 到 tmp + spawn `open -a Thunderbird ...`（或 Linux/Win 等价物），
+        // 让 TB 弹自己原生的"导入事件"对话框，用户点一下确认就装进日历，
+        // 不再走系统默认 .ics handler（Mac 上是 Apple Calendar 不是 TB）
+        result = openCalendarICS({ ics: params.ics });
         break;
       default:
         throw new Error(`unknown method: ${method}`);

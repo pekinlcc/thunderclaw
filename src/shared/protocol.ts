@@ -34,13 +34,21 @@ export type HostInfo = {
 
 // 扩展期望的 NMH 协议版本——比这个低就提示用户重装 native host。
 // 跟 native-host/version.mjs 里的 PROTOCOL_VERSION 严格对齐。
-export const EXPECTED_PROTOCOL_VERSION = 3;
+//   1 = pre-v0.1.15（只有 claude-call）
+//   2 = v0.1.15（加 llm-call、去 claude-call）
+//   3 = v0.1.18（加 host-info）
+//   4 = v0.1.20（加 open-calendar-ics —— 一键导入到 TB 日历）
+export const EXPECTED_PROTOCOL_VERSION = 4;
+
+export type OpenCalendarICSParams = { ics: string };
+export type OpenCalendarICSResult = { ok: boolean };
 
 export type NativeRequest =
   | { id: string; method: 'ping'; params: Record<string, never> }
   | { id: string; method: 'host-info'; params: Record<string, never> }
   | { id: string; method: 'probe-cli'; params: Record<string, never> }
-  | { id: string; method: 'llm-call'; params: LLMCallParams };
+  | { id: string; method: 'llm-call'; params: LLMCallParams }
+  | { id: string; method: 'open-calendar-ics'; params: OpenCalendarICSParams };
 
 export type NativeResponse<T = unknown> =
   | { id: string; result: T }

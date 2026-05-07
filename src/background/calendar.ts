@@ -1,12 +1,17 @@
 // Calendar / Task 创建。
-// 优先用 messenger.calendar.* API（TB 140 仍然部分实验性，可能 undefined）；
-// 不可用时退回到 .ics 文件下载或剪贴板兜底。
+// 三层路径，从最优雅到兜底：
+//   1) messenger.calendar.*    —— TB 内置 API；TB 128 标准表面其实没暴露这个 namespace，
+//                                 大概率是 undefined，但留着以防未来 TB 把它正式开放
+//   2) NMH open-calendar-ics    —— native host 写 tmp.ics + 显式 spawn TB 打开它，
+//                                 TB 自己弹原生导入对话框，用户点一下"导入"就完事
+//   3) browser.downloads        —— 最后兜底，文件落 ~/Downloads/，提示用户手动双击
 
 import type {
   CreateActionResult,
   ExtractedEvent,
   ExtractedTask,
 } from '../shared/protocol';
+import { nativeHost } from './native-host';
 
 // 是否能用 native calendar API（TB 140 ESR 起部分可用）
 function calendarApiAvailable(): boolean {
@@ -148,9 +153,22 @@ export async function createCalendarEvent(
     }
   }
 
-  // 2) Fallback: 下到 Downloads/ThunderClaw/，尝试自动用 TB 打开
+  // 2) NMH 路径：让 native host spawn TB 打开 .ics，TB 内部弹原生导入对话框
+  const ics = buildICS(event);
   try {
-    const ics = buildICS(event);
+    await nativeHost.openCalendarICS(ics);
+    return {
+      ok: true,
+      via: 'native-api',
+      detail: 'Thunderbird 已弹日历导入对话框，点"导入"即可',
+    };
+  } catch (err) {
+    console.warn('[ThunderClaw][calendar] NMH open-calendar-ics failed:', err);
+    // 老 host（pre-v0.1.20，没这个方法）→ 落到 downloads 兜底
+  }
+
+  // 3) Downloads 兜底：文件落进 ~/Downloads/ThunderClaw/ + 试着 downloads.open
+  try {
     const filename = `event-${Date.now()}.ics`;
     const r = await downloadAndOpenICS(filename, ics);
     return {
@@ -199,23 +217,37 @@ export async function createTask(task: ExtractedTask): Promise<CreateActionResul
     }
   }
 
-  // 2) 兜底：静默下 VTODO .ics → 自动用 TB 打开 → 任务导入对话框 → 10s 自清
+  // 2) NMH 路径：和 createCalendarEvent 同样走 host spawn TB 打开 .ics
+  const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@thunderclaw`;
+  const due = task.dueISO ? fmtICSDate(task.dueISO, false) : '';
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//ThunderClaw//AI Mail Assistant//EN',
+    'BEGIN:VTODO',
+    `UID:${uid}`,
+    `DTSTAMP:${fmtICSDate(new Date().toISOString(), false)}`,
+    `SUMMARY:${escapeICS(task.title || '(无标题)')}`,
+  ];
+  if (due) lines.push(`DUE:${due}`);
+  if (task.notes) lines.push(`DESCRIPTION:${escapeICS(task.notes)}`);
+  lines.push('END:VTODO', 'END:VCALENDAR');
+  const ics = lines.join('\r\n');
+
   try {
-    const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@thunderclaw`;
-    const due = task.dueISO ? fmtICSDate(task.dueISO, false) : '';
-    const lines = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//ThunderClaw//AI Mail Assistant//EN',
-      'BEGIN:VTODO',
-      `UID:${uid}`,
-      `DTSTAMP:${fmtICSDate(new Date().toISOString(), false)}`,
-      `SUMMARY:${escapeICS(task.title || '(无标题)')}`,
-    ];
-    if (due) lines.push(`DUE:${due}`);
-    if (task.notes) lines.push(`DESCRIPTION:${escapeICS(task.notes)}`);
-    lines.push('END:VTODO', 'END:VCALENDAR');
-    const r = await downloadAndOpenICS(`task-${Date.now()}.ics`, lines.join('\r\n'));
+    await nativeHost.openCalendarICS(ics);
+    return {
+      ok: true,
+      via: 'native-api',
+      detail: 'Thunderbird 已弹任务导入对话框，点"导入"即可',
+    };
+  } catch (err) {
+    console.warn('[ThunderClaw][calendar] NMH open-calendar-ics (task) failed:', err);
+  }
+
+  // 3) Downloads 兜底
+  try {
+    const r = await downloadAndOpenICS(`task-${Date.now()}.ics`, ics);
     return {
       ok: true,
       via: 'fallback-ics',

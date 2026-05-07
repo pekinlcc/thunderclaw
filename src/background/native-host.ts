@@ -8,6 +8,7 @@ import type {
   ClaudeCallParams,
   ClaudeCallResult,
   HostInfo,
+  OpenCalendarICSResult,
 } from '../shared/protocol';
 import { getState } from './store';
 
@@ -77,6 +78,12 @@ class NativeHost {
   // 调用方据此判断是否过旧并提示用户重装。
   getHostInfo() {
     return this.call<HostInfo>({ method: 'host-info', params: {} });
+  }
+
+  // 让 native host 把 .ics 喂给 Thunderbird —— 用户点一下 TB 弹的"导入"对话框就行，
+  // 不会被系统默认 .ics handler（Mac 上是 Apple Calendar）拦截。
+  openCalendarICS(ics: string) {
+    return this.call<OpenCalendarICSResult>({ method: 'open-calendar-ics', params: { ics } });
   }
 
   // 根据用户在 UI 里选的 CLI 引擎路由到对应后端。

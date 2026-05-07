@@ -349,6 +349,10 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - 加 `host-info` RPC + `PROTOCOL_VERSION` 元数据，扩展启动时握手，host 过旧 / 不一致就在 UI 顶端弹红/黄条 + 一键复制重装命令
   - 释出 `thunderclaw-native-host-v<v>.tar.gz` / `.zip`，Mac/Win 用户不用 git clone 整个仓库；Linux 仍优先 `.deb`
   - 堵掉"XPI 升了 host 没升 → 全部 `unknown method: llm-call` → 用户看到'今日无重要事项'但毫无提示"那个隐蔽坑
+- [x] **NMH 路径直接让 TB 弹原生导入对话框**（v0.1.20 / PROTOCOL_VERSION=4）：
+  - 加 `open-calendar-ics` RPC：native host 写 tmp.ics + spawn `open -a Thunderbird` (Mac) / `thunderbird file.ics` (Linux/Win)，TB 自己弹原生"导入事件"对话框，用户点一下"导入"就完事
+  - 之前的"已保存到 Downloads/...，请双击打开导入"链路彻底退到只在 NMH 失败时兜底
+  - 解决根因：TB 128 标准 WebExtension 表面其实不暴露 `messenger.calendar` namespace，永远走 fallback；又 Mac 上系统默认 .ics handler 是 Apple Calendar 不是 TB，`downloads.open` 即便能成也跑错 app
 - [x] **Mac 一键脚本 install-mac.sh**（v0.1.19）：
   - 一行命令：`curl -fsSL .../install-mac.sh | bash` —— 自动装 native host + 把 XPI 落进默认 profile 的 `extensions/` + 写 user.js（autoDisableScopes=0、xpinstall.signatures.required=false）+ 重启 TB
   - 用 sideload 路径而不是 `.pkg`：不需要 Apple Developer ID 签名，无 Gatekeeper "无法验证开发者"弹窗

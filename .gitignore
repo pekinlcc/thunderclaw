@@ -5,3 +5,6 @@ dist/
 .vscode/
 .idea/
 *.xpi
+# tmp .ics 兜底文件——TB 偶尔会把这些落到 repo 根
+task-*.ics
+event-*.ics
