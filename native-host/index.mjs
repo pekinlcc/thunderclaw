@@ -4,6 +4,7 @@
 
 import { readMessages, writeMessage } from './protocol.mjs';
 import { probeAll, callLLM } from './cli.mjs';
+import { VERSION, PROTOCOL_VERSION } from './version.mjs';
 
 function log(...args) {
   process.stderr.write(`[thunderclaw-host] ${args.join(' ')}\n`);
@@ -27,6 +28,10 @@ async function handle(req) {
     switch (method) {
       case 'ping':
         result = { ok: true, pid: process.pid };
+        break;
+      case 'host-info':
+        // 扩展用这条做版本握手：拿不到 / 拿到 mismatch → 提示用户重装 native host
+        result = { version: VERSION, protocolVersion: PROTOCOL_VERSION };
         break;
       case 'probe-cli':
         result = await probeAll();

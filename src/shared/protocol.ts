@@ -27,8 +27,18 @@ export type LLMCallParams = ClaudeCallParams & {
   engine: 'claude' | 'codex';
 };
 
+export type HostInfo = {
+  version: string;        // native host 包的版本，例 "0.1.18"
+  protocolVersion: number; // 仅在 NMH 方法集变更时 bump
+};
+
+// 扩展期望的 NMH 协议版本——比这个低就提示用户重装 native host。
+// 跟 native-host/version.mjs 里的 PROTOCOL_VERSION 严格对齐。
+export const EXPECTED_PROTOCOL_VERSION = 3;
+
 export type NativeRequest =
   | { id: string; method: 'ping'; params: Record<string, never> }
+  | { id: string; method: 'host-info'; params: Record<string, never> }
   | { id: string; method: 'probe-cli'; params: Record<string, never> }
   | { id: string; method: 'llm-call'; params: LLMCallParams };
 
@@ -151,6 +161,17 @@ export type BriefingItem = {
   threadKey: string;
 };
 
+// Native host 的版本握手结果。startup 时 background 调一次 host-info 算出来。
+// - 'matched'：版本号 + protocolVersion 对得上，无声放行
+// - 'too-old'：host 不认 host-info（pre-v0.1.18）或 protocolVersion 不够 → 红条提示重装
+// - 'mismatch'：protocolVersion 够了但 version 字符串不匹配 → 黄条提示建议重装
+// - null：还没探完 / 探失败
+export type HostHandshake =
+  | null
+  | { kind: 'matched'; version: string; protocolVersion: number }
+  | { kind: 'too-old'; reason: string }
+  | { kind: 'mismatch'; hostVersion: string; expectedVersion: string };
+
 export type AppState = {
   // 升级时 store 检测到老版本会丢弃 briefing / acknowledged / muted 等运行时缓存，
   // 但保留 intro / selectedCli 这些用户配置。
@@ -166,4 +187,6 @@ export type AppState = {
   muted: string[];
   // 优先级排队 + 分批扫描状态
   unscannedContacts: number; // 还没扫的 top 50 之外的联系人数
+  // 启动时握手的结果——内存态，不持久化（每次重启都 re-probe）
+  hostHandshake: HostHandshake;
 };

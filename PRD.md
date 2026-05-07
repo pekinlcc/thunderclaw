@@ -247,6 +247,7 @@ Mockup ③ 提供两个按钮：
 
 - 因为 XPI 沙箱无 `child_process`，单独写一个 Node helper 程序
 - 扩展通过 stdin/stdout 与 helper 通信（4-byte length-prefix JSON）
+- **版本握手**：扩展启动时调 `host-info` 拿 `{version, protocolVersion}`。`PROTOCOL_VERSION` 仅在 helper 支持的方法集发生变化时 bump（当前 = 3）。host 不认 `host-info`（pre-v0.1.18）或 `protocolVersion` 低于 `EXPECTED_PROTOCOL_VERSION` → UI 顶端红条提示重装；版本号不一致但 protocol 够 → 黄条提示同步更新。`native-host/version.mjs` 在每次 build 时由 `scripts/build.mjs` 从 `src/manifest.json` + `src/shared/protocol.ts` 自动生成。
 - helper 收到 `llm-call` 后按 `engine` 字段路由：
   - **claude**：spawn `claude --print --max-turns 1 --output-format text`，prompt 走 stdin，`--append-system-prompt` 注入 system prompt，`--disallowedTools` 关掉所有工具只取文本
   - **codex**：spawn `codex exec --skip-git-repo-check --color never -o <tmpfile>`，cwd 设到独立 tmpdir（避开 git 仓库检测），prompt 走 stdin（system prompt 拼前面），最后从 `tmpfile` 读"最后一条 agent message"——这样规避 codex stdout 含 banner/推理/turn marker 的噪音
@@ -344,6 +345,10 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - BriefingItem 加 `replyToMessageId` / `replyTargetIsUserSent` / `incomingEmailIds`——避免 follow-up 场景下 `replyToSender` 把信发给用户自己，归档也只动收到的那部分不动 Sent
   - 复合 intent 含 reply+ack 时把 ack 推迟到用户开撰写窗口后再跑，否则卡片会在用户看到回复正文之前就被 acknowledged 过滤掉
   - LLM 输出 `priority` 不在白名单时归到 'medium'（防 UI 渲染崩）；`items` 不是数组时跳过该联系人
+- [x] **Native host 版本握手 + tarball 释出**（v0.1.18）：
+  - 加 `host-info` RPC + `PROTOCOL_VERSION` 元数据，扩展启动时握手，host 过旧 / 不一致就在 UI 顶端弹红/黄条 + 一键复制重装命令
+  - 释出 `thunderclaw-native-host-v<v>.tar.gz` / `.zip`，Mac/Win 用户不用 git clone 整个仓库；Linux 仍优先 `.deb`
+  - 堵掉"XPI 升了 host 没升 → 全部 `unknown method: llm-call` → 用户看到'今日无重要事项'但毫无提示"那个隐蔽坑
 - [ ] macOS `.pkg` / Windows `.msi` 安装器
 - [ ] Rubric 文件（AI 自维护的判定标准）
 - [ ] 设置面板（CLI 切换、清除数据、编辑自我介绍）

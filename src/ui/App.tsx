@@ -5,6 +5,7 @@ import { CLIPickerScreen } from './screens/cli-picker';
 import { IntroSetupScreen } from './screens/intro-setup';
 import { LoadingScreen } from './screens/loading';
 import { BriefingScreen } from './screens/briefing';
+import { HostHandshakeBanner } from './host-banner';
 import { tbStyles } from './styles';
 
 type View = 'cli' | 'intro' | 'loading' | 'briefing';
@@ -76,31 +77,46 @@ export function App() {
 
   const view = pickView(state);
 
+  // 顶部 host 版本握手提示——任何 view 都先盖一条（"too-old" 红条，"mismatch" 黄条）。
+  // 占用一行高度，下方 view 按需自适应。
+  const banner = <HostHandshakeBanner handshake={state.hostHandshake} />;
+
+  function withBanner(children: React.ReactNode) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+        {banner}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          {children}
+        </div>
+      </div>
+    );
+  }
+
   switch (view) {
     case 'cli':
-      return (
+      return withBanner(
         <CLIPickerScreen
           status={state.cliStatus}
           selectedCli={state.selectedCli}
           onContinue={async () => {
             await refresh();
           }}
-        />
+        />,
       );
     case 'intro':
-      return (
+      return withBanner(
         <IntroSetupScreen
           initialIntro={state.intro}
           onDone={async () => {
             await ui.startPipeline();
             await refresh();
           }}
-        />
+        />,
       );
     case 'loading':
-      return <LoadingScreen pipeline={state.pipeline} />;
+      return withBanner(<LoadingScreen pipeline={state.pipeline} />);
     case 'briefing':
-      return (
+      return withBanner(
         <BriefingScreen
           items={state.briefing.filter(
             (it) => !state.acknowledged.includes(it.id) && !state.muted.includes(it.id),
@@ -116,7 +132,7 @@ export function App() {
             await ui.scanMore();
             await refresh();
           }}
-        />
+        />,
       );
   }
 }

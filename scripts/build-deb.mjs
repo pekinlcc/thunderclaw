@@ -33,7 +33,7 @@ mkdirSync(STAGING, { recursive: true });
 // ─── 文件树 ──────────────────────────────────────
 // /usr/lib/thunderclaw/  (native host)
 mkdirSync(join(STAGING, 'usr/lib/thunderclaw'), { recursive: true });
-for (const f of ['index.mjs', 'cli.mjs', 'protocol.mjs']) {
+for (const f of ['index.mjs', 'cli.mjs', 'protocol.mjs', 'version.mjs']) {
   copyFileSync(join(HOST_DIR, f), join(STAGING, 'usr/lib/thunderclaw', f));
 }
 // host wrapper

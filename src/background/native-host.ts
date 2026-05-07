@@ -7,6 +7,7 @@ import type {
   ProbeResult,
   ClaudeCallParams,
   ClaudeCallResult,
+  HostInfo,
 } from '../shared/protocol';
 import { getState } from './store';
 
@@ -70,6 +71,12 @@ class NativeHost {
 
   probeCli() {
     return this.call<ProbeResult>({ method: 'probe-cli', params: {} });
+  }
+
+  // 版本握手。老 host（pre-v0.1.18）会回 "unknown method: host-info"——
+  // 调用方据此判断是否过旧并提示用户重装。
+  getHostInfo() {
+    return this.call<HostInfo>({ method: 'host-info', params: {} });
   }
 
   // 根据用户在 UI 里选的 CLI 引擎路由到对应后端。

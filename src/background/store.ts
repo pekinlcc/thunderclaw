@@ -21,6 +21,7 @@ function defaultState(): AppState {
     acknowledged: [],
     muted: [],
     unscannedContacts: 0,
+    hostHandshake: null,
   };
 }
 

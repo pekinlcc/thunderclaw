@@ -125,7 +125,7 @@ function install() {
 
   // 1) 复制 native-host/*.mjs 到 libDir
   mkdirSync(layout.libDir, { recursive: true });
-  for (const f of ['index.mjs', 'cli.mjs', 'protocol.mjs']) {
+  for (const f of ['index.mjs', 'cli.mjs', 'protocol.mjs', 'version.mjs']) {
     copyFileSync(join(HOST_SRC, f), join(layout.libDir, f));
   }
   console.log(`  ✓ library → ${layout.libDir}`);

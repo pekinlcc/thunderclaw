@@ -1,5 +1,5 @@
 import * as esbuild from 'esbuild';
-import { mkdir, copyFile, readdir, stat, writeFile, rm } from 'node:fs/promises';
+import { mkdir, copyFile, readdir, stat, writeFile, rm, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,25 @@ const ROOT = join(__dirname, '..');
 const SRC = join(ROOT, 'src');
 const DIST = join(ROOT, 'dist', 'extension');
 const XPI = join(ROOT, 'dist', 'thunderclaw.xpi');
+const HOST_DIR = join(ROOT, 'native-host');
+
+// 从 src/manifest.json 注入 native-host/version.mjs，让握手 RPC 自动跟扩展版本对齐。
+// 同时校验：扩展端 EXPECTED_PROTOCOL_VERSION 必须 = host 端 PROTOCOL_VERSION，否则 fail build。
+async function stampHostVersion() {
+  const manifest = JSON.parse(await readFile(join(SRC, 'manifest.json'), 'utf8'));
+  const protocol = await readFile(join(SRC, 'shared', 'protocol.ts'), 'utf8');
+  const m = protocol.match(/EXPECTED_PROTOCOL_VERSION\s*=\s*(\d+)/);
+  if (!m) throw new Error('protocol.ts: cannot find EXPECTED_PROTOCOL_VERSION');
+  const expectedProto = Number(m[1]);
+  const out = [
+    '// 自动生成于 build 时——不要手动编辑。来源：src/manifest.json + src/shared/protocol.ts',
+    `export const VERSION = '${manifest.version}';`,
+    `export const PROTOCOL_VERSION = ${expectedProto};`,
+    '',
+  ].join('\n');
+  await writeFile(join(HOST_DIR, 'version.mjs'), out);
+  console.log(`  ✓ stamped native-host/version.mjs  v${manifest.version} (proto=${expectedProto})`);
+}
 
 const watch = process.argv.includes('--watch');
 
@@ -45,6 +64,7 @@ const buildOpts = {
 
 async function buildAll() {
   await rm(DIST, { recursive: true, force: true });
+  await stampHostVersion();
   await copyStatic();
 
   await esbuild.build({

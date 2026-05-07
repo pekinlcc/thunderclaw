@@ -10,6 +10,7 @@ import {
   setSelectedCli,
   setState,
 } from './store';
+import { EXPECTED_PROTOCOL_VERSION, type HostHandshake } from '../shared/protocol';
 import { openComposeFor } from './compose';
 import { getEmailPreview, markReadAndArchive, openOriginal } from './messages';
 import { generateReply } from './writer';
@@ -79,6 +80,44 @@ async function probeAndStore() {
     });
     throw err;
   }
+}
+
+// 版本握手：早期 host（pre-v0.1.18）不认 host-info，会回 "unknown method..."；
+// 新 host 回 { version, protocolVersion }。把结果归一成 HostHandshake 写进 state，
+// UI 据此画顶端的红/黄条。
+const EXTENSION_VERSION = (browser.runtime.getManifest() as { version: string }).version;
+
+async function handshakeAndStore(): Promise<HostHandshake> {
+  let handshake: HostHandshake;
+  try {
+    const info = await nativeHost.getHostInfo();
+    if (info.protocolVersion < EXPECTED_PROTOCOL_VERSION) {
+      handshake = {
+        kind: 'too-old',
+        reason: `host protocol v${info.protocolVersion} < required v${EXPECTED_PROTOCOL_VERSION}`,
+      };
+    } else if (info.version !== EXTENSION_VERSION) {
+      handshake = {
+        kind: 'mismatch',
+        hostVersion: info.version,
+        expectedVersion: EXTENSION_VERSION,
+      };
+    } else {
+      handshake = { kind: 'matched', version: info.version, protocolVersion: info.protocolVersion };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // "unknown method: host-info" → 老 host
+    if (/unknown method/i.test(msg)) {
+      handshake = { kind: 'too-old', reason: 'host does not support host-info' };
+    } else {
+      // 连接彻底没起来——也当 too-old 处理（用户最有用的反馈是"重装"）
+      handshake = { kind: 'too-old', reason: msg };
+    }
+  }
+  console.log('[ThunderClaw] host handshake:', JSON.stringify(handshake));
+  await setState({ hostHandshake: handshake });
+  return handshake;
 }
 
 browser.runtime.onMessage.addListener(async (raw: unknown) => {
@@ -228,5 +267,7 @@ browser.storage.onChanged.addListener((changes, area) => {
     .catch(() => {/* no listeners is ok */});
 });
 
-console.log('[ThunderClaw] background script started');
+console.log('[ThunderClaw] background script started, ext version', EXTENSION_VERSION);
 ensureSpace().catch((err) => console.error('[ThunderClaw] space register failed:', err));
+// 启动时跑一次握手；UI 顶端的"请重装 native host"红条由此触发
+handshakeAndStore().catch((err) => console.error('[ThunderClaw] handshake failed:', err));
