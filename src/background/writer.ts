@@ -76,7 +76,7 @@ export async function generateReply({
   lines.push('');
   lines.push('请直接输出回复正文（仅正文，不带其它解释、不带 markdown 代码块）。');
 
-  const out = await nativeHost.callClaude({
+  const out = await nativeHost.callLLM({
     prompt: lines.join('\n'),
     systemPrompt: SYSTEM_PROMPT,
     timeoutMs: 180000,

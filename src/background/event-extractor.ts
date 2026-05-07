@@ -98,7 +98,7 @@ export async function extractEvent({
 }): Promise<ExtractedEvent | null> {
   const context = await buildContext(item);
   const prompt = `${context}\n用户点选的动作：${actionLabel}\n\n请按 schema 输出 JSON。`;
-  const out = await nativeHost.callClaude({
+  const out = await nativeHost.callLLM({
     prompt,
     systemPrompt: EVENT_SYSTEM,
     timeoutMs: 60000,
@@ -115,7 +115,7 @@ export async function extractTask({
 }): Promise<ExtractedTask | null> {
   const context = await buildContext(item);
   const prompt = `${context}\n用户点选的动作：${actionLabel}\n\n请按 schema 输出 JSON。`;
-  const out = await nativeHost.callClaude({
+  const out = await nativeHost.callLLM({
     prompt,
     systemPrompt: TASK_SYSTEM,
     timeoutMs: 60000,

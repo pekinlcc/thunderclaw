@@ -23,10 +23,14 @@ export type ClaudeCallResult = {
   text: string;
 };
 
+export type LLMCallParams = ClaudeCallParams & {
+  engine: 'claude' | 'codex';
+};
+
 export type NativeRequest =
   | { id: string; method: 'ping'; params: Record<string, never> }
   | { id: string; method: 'probe-cli'; params: Record<string, never> }
-  | { id: string; method: 'claude-call'; params: ClaudeCallParams };
+  | { id: string; method: 'llm-call'; params: LLMCallParams };
 
 export type NativeResponse<T = unknown> =
   | { id: string; result: T }

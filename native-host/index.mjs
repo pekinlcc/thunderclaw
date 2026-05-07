@@ -3,7 +3,7 @@
 // 与扩展通过 stdio + 4-byte length-prefix 协议通信。
 
 import { readMessages, writeMessage } from './protocol.mjs';
-import { probeAll, callClaude } from './cli.mjs';
+import { probeAll, callLLM } from './cli.mjs';
 
 function log(...args) {
   process.stderr.write(`[thunderclaw-host] ${args.join(' ')}\n`);
@@ -31,9 +31,11 @@ async function handle(req) {
       case 'probe-cli':
         result = await probeAll();
         break;
-      case 'claude-call':
+      case 'llm-call':
+        // 根据 engine 字段（'claude' | 'codex'）路由到对应 CLI
         result = {
-          text: await callClaude({
+          text: await callLLM({
+            engine: params.engine,
             prompt: params.prompt,
             systemPrompt: params.systemPrompt,
             timeoutMs: params.timeoutMs,

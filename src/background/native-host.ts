@@ -8,6 +8,7 @@ import type {
   ClaudeCallParams,
   ClaudeCallResult,
 } from '../shared/protocol';
+import { getState } from './store';
 
 const HOST_NAME = 'thunderclaw';
 
@@ -71,8 +72,15 @@ class NativeHost {
     return this.call<ProbeResult>({ method: 'probe-cli', params: {} });
   }
 
-  callClaude(params: ClaudeCallParams) {
-    return this.call<ClaudeCallResult>({ method: 'claude-call', params });
+  // 根据用户在 UI 里选的 CLI 引擎路由到对应后端。
+  // selectedCli 为 null（用户没选过）时兜底走 claude。
+  async callLLM(params: ClaudeCallParams) {
+    const state = await getState();
+    const engine = state.selectedCli ?? 'claude';
+    return this.call<ClaudeCallResult>({
+      method: 'llm-call',
+      params: { ...params, engine },
+    });
   }
 
   shutdown() {

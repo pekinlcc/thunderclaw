@@ -2,8 +2,8 @@
 
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const execFileP = promisify(execFile);
@@ -130,4 +130,82 @@ export async function callClaude({ prompt, systemPrompt, timeoutMs = 180000 }) {
     child.stdin.write(prompt);
     child.stdin.end();
   });
+}
+
+// 调用 codex exec 跑非交互式推理。
+// 关键点：
+//  - codex exec 的 stdout 会含 banner / 推理 / turn marker 等噪音
+//  - 用 `-o <file>` 把"最后一条 agent message"单独写到文件，干净
+//  - `--skip-git-repo-check` 因为 native host 进程的 cwd 不一定是 git 仓库
+//  - prompt 走 stdin 避免命令行长度限制
+export async function callCodex({ prompt, systemPrompt, timeoutMs = 180000 }) {
+  const codexPath = await which('codex');
+  if (!codexPath) throw new Error('codex binary not found');
+  // Codex 没有 --append-system-prompt，把 system prompt 拼在 user prompt 前面
+  const fullPrompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${prompt}` : prompt;
+  const workDir = mkdtempSync(join(tmpdir(), 'thunderclaw-codex-'));
+  const outFile = join(workDir, 'last.txt');
+  return new Promise((resolve, reject) => {
+    const args = [
+      'exec',
+      '--skip-git-repo-check',
+      '--color', 'never',
+      '-o', outFile,
+    ];
+    const child = spawn(codexPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, PATH: process.env.PATH, NO_COLOR: '1' },
+    });
+
+    let stderr = '';
+    let killed = false;
+    const cleanup = () => {
+      try { rmSync(workDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    };
+    const timer = setTimeout(() => {
+      killed = true;
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), 2000).unref();
+    }, timeoutMs);
+
+    child.stdout.on('data', () => { /* 不要 buffer 整个 stdout，会爆内存 */ });
+    child.stderr.on('data', (b) => (stderr += b.toString('utf8')));
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      cleanup();
+      reject(err);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (killed) {
+        cleanup();
+        return reject(new Error(`codex timeout (${timeoutMs}ms)`));
+      }
+      if (code !== 0) {
+        cleanup();
+        return reject(new Error(`codex exit ${code}: ${stderr.slice(0, 500)}`));
+      }
+      let text = '';
+      try {
+        text = readFileSync(outFile, 'utf8');
+      } catch (err) {
+        cleanup();
+        return reject(new Error(`codex output file missing: ${err.message}`));
+      }
+      cleanup();
+      resolve(text.trim());
+    });
+
+    child.stdin.write(fullPrompt);
+    child.stdin.end();
+  });
+}
+
+// 统一入口：根据 engine 路由到对应 CLI。
+export function callLLM({ engine, prompt, systemPrompt, timeoutMs }) {
+  if (engine === 'codex') {
+    return callCodex({ prompt, systemPrompt, timeoutMs });
+  }
+  // 默认 / 未指定 → claude
+  return callClaude({ prompt, systemPrompt, timeoutMs });
 }

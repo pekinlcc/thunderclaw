@@ -236,7 +236,7 @@ export async function runPulse(
     let raw: string;
     try {
       const prompt = await buildPulsePrompt(b, intro, cache);
-      const out = await nativeHost.callClaude({
+      const out = await nativeHost.callLLM({
         prompt,
         systemPrompt: SYSTEM_PROMPT,
         timeoutMs: 240000,
@@ -349,7 +349,7 @@ export async function runBriefing(items: BriefingItem[]): Promise<BriefingItem[]
   }
   await setPipeline({ phase: 'briefing' });
   try {
-    const out = await nativeHost.callClaude({
+    const out = await nativeHost.callLLM({
       prompt: buildBriefingPrompt(items),
       systemPrompt: BRIEFING_SYSTEM,
       timeoutMs: 240000,
