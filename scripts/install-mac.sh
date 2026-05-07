@@ -53,12 +53,31 @@ require_cmd() {
 resolve_version() {
   local v
   v="$1"
-  if [[ "$v" == "latest" || -z "$v" ]]; then
-    curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-      | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1
-  else
+  if [[ "$v" != "latest" && -n "$v" ]]; then
     echo "$v"
+    return
   fi
+  # 不走 api.github.com（未认证 60 次/小时，重跑两次就 403）。
+  # 用 /releases/latest 的 302 → /releases/tag/vX.Y.Z，从 Location header 抽版本号。
+  # 这条路径不需要 API token，没限流。
+  local resolved
+  resolved=$(curl -fsSI "https://github.com/$REPO/releases/latest" 2>/dev/null \
+    | awk 'tolower($1) == "location:" { print $2 }' \
+    | tr -d '\r\n' \
+    | sed -n 's|.*/releases/tag/v||p')
+  if [[ -n "$resolved" ]]; then
+    echo "$resolved"
+    return
+  fi
+  # 兜底：试一下 API（万一 redirect 路径出了问题，给个后备）
+  resolved=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+    | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1)
+  if [[ -n "$resolved" ]]; then
+    echo "$resolved"
+    return
+  fi
+  err "无法解析最新版本号——GitHub 暂时连不上？指定版本试试：bash -s -- 0.1.21"
+  exit 1
 }
 
 # 解析 profiles.ini，返回 default profile 的相对 Path（不含 TB_PROFILES_DIR 前缀）。
@@ -215,15 +234,27 @@ uninstall_main() {
   printf "\n注：留下了 user.js 里那三条 pref——它们对其它未签名扩展也有用，要彻底清自己删 ~/Library/Thunderbird/Profiles/*/user.js 里 thunderclaw 标记下方的行。\n"
 }
 
+run_install_with_resolved_version() {
+  local raw resolved
+  raw="$1"
+  resolved=$(resolve_version "$raw")
+  if [[ -z "$resolved" ]]; then
+    # 兜底 —— resolve_version 内部 exit 应该已经退了，但 $() 子 shell 偶尔不冒泡
+    err "resolve_version 返回了空字符串。用具体版本重试：bash -s -- 0.1.21"
+    exit 1
+  fi
+  install_main "$resolved"
+}
+
 case "$ARG" in
   install|"")
-    install_main "$(resolve_version "${2:-latest}")"
+    run_install_with_resolved_version "${2:-latest}"
     ;;
   uninstall|remove)
     uninstall_main
     ;;
   *)
     # 没匹配 install/uninstall，按 version 处理（用户直接传了 0.1.20 之类的）
-    install_main "$(resolve_version "$ARG")"
+    run_install_with_resolved_version "$ARG"
     ;;
 esac

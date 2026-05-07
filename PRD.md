@@ -349,6 +349,7 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - 加 `host-info` RPC + `PROTOCOL_VERSION` 元数据，扩展启动时握手，host 过旧 / 不一致就在 UI 顶端弹红/黄条 + 一键复制重装命令
   - 释出 `thunderclaw-native-host-v<v>.tar.gz` / `.zip`，Mac/Win 用户不用 git clone 整个仓库；Linux 仍优先 `.deb`
   - 堵掉"XPI 升了 host 没升 → 全部 `unknown method: llm-call` → 用户看到'今日无重要事项'但毫无提示"那个隐蔽坑
+- [x] **install-mac.sh 不再走 GitHub API**（v0.1.22）：之前用 `api.github.com` 解版本号，未认证 60 次/小时，重跑两三次就 403。改用 `/releases/latest` 的 302 重定向 location（不限流）；resolve 失败硬退出 + 提示用户传具体版本号。
 - [x] **install-mac.sh 兼容 bash 3.2**（v0.1.21）：macOS 自带 bash 3.2.57，`set -u` + `local var="value"` 在 piped-bash 上下文里偶发不绑定，会让 user.js 那一步前死掉，导致 sideloaded XPI 没启用。改用两行 `local var; var=...` 形式 + 去掉 `-u`。
 - [x] **NMH 路径直接让 TB 弹原生导入对话框**（v0.1.20 / PROTOCOL_VERSION=4）：
   - 加 `open-calendar-ics` RPC：native host 写 tmp.ics + spawn `open -a Thunderbird` (Mac) / `thunderbird file.ics` (Linux/Win)，TB 自己弹原生"导入事件"对话框，用户点一下"导入"就完事
