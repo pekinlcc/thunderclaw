@@ -36,12 +36,12 @@ Thunderbird XPI 扩展，新增 "AI 视图" 标签页，由用户本地已登录
   - 标题、摘要
   - 优先级（高 / 中 / 低）
   - 截止时间（如有）
-  - actionType：`reply` / `acknowledge` / `none`
-  - **suggestedActions**：当 actionType=`reply` 时，2–4 个候选**自然语言动作**（不是完整回复正文），覆盖不同合理处理方向（确认 / 婉拒 / 反问 / 推迟 等）；其它情况为空数组
+  - **suggestedActions**：一组**用户视角的决定**（如"我要参加" / "我不参加" / "咨询会议形式" / "我已知晓"）。每个决定打包成 1-N 个原子操作步骤（见 §1.5）
   - AI 判断依据（reason）
   - 关联的原邮件 ID 列表（点击可展开预览 / 跳到 TB 邮件视图）
 - 没有重要事项的联系人：不出卡片
-- **关键决策**：Pulse 阶段不预生成完整回复正文，避免给从不打开的卡片烧 token。完整正文由 Writer agent (§1.4) 在用户点动作时按需生成。
+
+**关键设计原则**：Pulse **不再列原子操作**（如"加日历"、"回复确认"），而是站在用户视角想"面对这件事，我可能想做的几种决定"，每个决定打包多个步骤一键执行。Pulse 也不预生成回复正文——回复正文由 Writer agent (§1.4) 在用户点动作时按需生成。
 
 ### 1.3 Briefing（Agent b · 全局汇总）
 
@@ -52,21 +52,75 @@ Thunderbird XPI 扩展，新增 "AI 视图" 标签页，由用户本地已登录
 - 输出最终的 "今日简报"，是 AI 视图主屏显示的内容
 - 卡片结构与 ContactPulse 一致
 
-### 1.4 Writer（按需触发的回复生成 agent）
+### 1.4 Writer / Event Extractor / Task Extractor（按需触发的执行 agent）
 
-用户在简报卡上点了某个 suggestedAction 按钮 → 触发独立的 LLM 调用生成实际回复正文：
+用户点某个 suggestedAction 按钮 → 系统按 `steps` 顺序执行原子操作。每种 step kind 对应一个 agent / API：
 
-- **输入**：item 上下文（联系人 / 标题 / 关联邮件正文）+ 用户选中的 action label + 用户自我介绍
-- **输出**：纯文本回复正文（无 Subject、无 markdown 围栏）
-- 生成完成后内联展开在卡片底部，配三个按钮：**在撰写窗口打开** / **复制** / **重新生成**
-- 用户切到下一张卡时生成态自动清空，不持久化
+| kind | 处理 | Agent / API |
+|---|---|---|
+| `reply` | 生成回复正文 | Writer agent → claude --print |
+| `calendar` | 解析日期/地点 + 创建事件 | Event Extractor agent → `messenger.calendar.items.create()` 或 .ics 兜底 |
+| `task` | 解析待办 + 创建任务 | Task Extractor agent → `messenger.calendar.items.create({type:'task'})` 或 VTODO .ics 兜底 |
+| `acknowledge` | 标已读 + 归档 + 从简报移除 | `messages.update({read:true})` + `messages.archive()` |
 
-**为什么分两个 agent 而不是 Pulse 一次出完整回复**：
-- 用户大部分卡只是 ack 一下，从不打开回复；Pulse 一次生成 N 张卡的完整正文是浪费
-- 回复方向有多个（确认/婉拒/反问），按钮表达比单一文本表达更准
-- 语气调整（正式/友好/简短）直接编进 action label，不用单独一套 tone preset 重生成
+**Reply step 永远最后跑**：calendar / task / acknowledge 是后台操作 + toast 反馈；reply 生成完正文后内联展开等用户审稿，配三按钮 **在撰写窗口打开** / **复制** / **重新生成**。永不自动发送。
 
-### 1.4 重要性判定 Rubric
+**为什么不让 Pulse 一次生成所有内容**：
+- 用户大多数卡只点 acknowledge，从不打开回复；Pulse 一次生成 N 张卡的完整正文是浪费
+- 同一邮件多个决定（参加/不参加/咨询）共享 thread context，但需要不同方向的回复——按需生成更精准
+- 语气调整直接编进 action label，不再有独立的 tone preset
+
+### 1.5 SuggestedAction 数据结构
+
+```ts
+SuggestedAction = {
+  label: string;       // 用户视角的决定，如 "我要参加" / "我不参加" / "咨询会议形式" / "我已知晓"
+  steps: ActionStep[]; // 该决定要顺序执行的原子操作
+};
+ActionStep = {
+  kind: 'reply' | 'calendar' | 'task' | 'acknowledge';
+  detail: string;      // 喂给对应 agent 的 prompt 输入
+};
+```
+
+**举例**：邮件是"K 年级说明会 5/12 17:40 校礼堂"
+
+```js
+[
+  { label: "我要参加",
+    steps: [
+      { kind: "calendar", detail: "加日历: K 年级说明会, 5/12 17:40, 校礼堂" },
+      { kind: "task",     detail: "加任务: 5/11 前提交在线报名表" },
+      { kind: "reply",    detail: "回复学校：确认参加 5/12 K 年级说明会" }
+    ]
+  },
+  { label: "我不参加",
+    steps: [
+      { kind: "reply",       detail: "回复学校：抱歉无法参加，能否提供录像" },
+      { kind: "acknowledge", detail: "" }
+    ]
+  },
+  { label: "咨询会议形式",
+    steps: [{ kind: "reply", detail: "回复反问：是线上还是线下，是否会有录像" }]
+  },
+  { label: "我已知晓",
+    steps: [{ kind: "acknowledge", detail: "" }]
+  }
+]
+```
+
+**硬规则**：
+- 每张卡 2-4 个 SuggestedAction
+- **总有一个兜底"我已知晓"决定**（单步 acknowledge）让用户能直接 dismiss
+- 邮件**含具体日期+时间** → "参加"类决定里**必须**有 calendar step
+- steps 数组可以只有 1 个元素（如纯通知类邮件就只一个 acknowledge step）
+- 多步决定（≥2 step）UI 上会有 ⚙ 角标，点开展开 checkbox 让用户取消勾选某些步骤再执行
+
+### 1.6 状态持久化的 schema 版本
+
+`AppState` 含 `schemaVersion: number`。bump 这个数字（在 `src/background/store.ts` 里）会让所有用户在升级后**第一次 getState 时自动清掉 briefing / acknowledged / muted 等运行时缓存**（保留 intro / selectedCli 等用户配置）。任何改 BriefingItem / SuggestedAction 形状的版本都要 bump。这避免新代码读到老 schema 数据时 UI 渲染崩溃。
+
+### 1.7 重要性判定 Rubric
 
 ContactPulse 和 Briefing 推理时**不靠硬编码规则**，而是把一份用户专属的 Markdown 文件 `rubric.md` 作为 system prompt 的一部分。这份文件由 AI 持续维护，用户也可以手动编辑。
 
@@ -274,8 +328,10 @@ v1 **不**做跨设备同步、不做手动备份/导出。
 - [x] Linux `.deb` 一键安装（v0.1.6）
 - [x] **Pulse 改输出 suggestedActions，新增 Writer agent 按需生成回复**（v0.1.7）
 - [x] 动作 toast 反馈（v0.1.8）
+- [x] **日历集成 + 任务集成**（v0.1.9 / 含 Event Extractor、Task Extractor agent + .ics 兜底）
+- [x] **复合用户决定按钮**（v0.1.10 / SuggestedAction.steps 嵌套结构 + ⚙ 调整面板 + 一键 fire 全套）
+- [x] **Schema 版本化 + 自动迁移**（v0.1.11 / 升级时自动清掉旧 schema 缓存，避免 UI 渲染崩溃）
 - [ ] macOS `.pkg` / Windows `.msi` 安装器
-- [ ] 日历集成（API 在 TB 140 部分实验性）
 - [ ] Rubric 文件（AI 自维护的判定标准）
 - [ ] 设置面板（CLI 切换、清除数据、编辑自我介绍）
 - [ ] 新邮件触发增量分析

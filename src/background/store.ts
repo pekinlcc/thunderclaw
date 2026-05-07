@@ -3,9 +3,14 @@
 import type { AppState, Pipeline, BriefingItem, ProbeResult } from '../shared/protocol';
 
 const KEY = 'thunderclaw.state';
+// 任何会改变 BriefingItem / SuggestedAction 形状的版本，bump 这个数字。
+// store 加载时如果发现存的不是当前 schema，会清掉 briefing / acknowledged /
+// muted 这些运行时缓存（避免新代码读到老结构数据崩 UI），但保留 intro / selectedCli。
+const SCHEMA_VERSION = 2;
 
 function defaultState(): AppState {
   return {
+    schemaVersion: SCHEMA_VERSION,
     cliStatus: null,
     selectedCli: null,
     intro: '',
@@ -25,9 +30,32 @@ const listeners = new Set<(s: AppState) => void>();
 export async function getState(): Promise<AppState> {
   if (cached) return cached;
   const raw = await browser.storage.local.get(KEY);
-  const merged: AppState = { ...defaultState(), ...((raw as Record<string, unknown>)[KEY] as Partial<AppState> ?? {}) };
-  cached = merged;
-  return merged;
+  const stored = (raw as Record<string, unknown>)[KEY] as Partial<AppState> | undefined;
+
+  if (!stored || stored.schemaVersion !== SCHEMA_VERSION) {
+    // schema 升级：丢掉运行时缓存，保留用户配置
+    const migrated: AppState = {
+      ...defaultState(),
+      intro: typeof stored?.intro === 'string' ? stored.intro : '',
+      introCompleted: stored?.introCompleted ?? false,
+      selectedCli:
+        stored?.selectedCli === 'claude' || stored?.selectedCli === 'codex'
+          ? stored.selectedCli
+          : null,
+    };
+    cached = migrated;
+    await browser.storage.local.set({ [KEY]: migrated });
+    if (stored) {
+      console.log(
+        `[ThunderClaw] storage schema migrated ${stored.schemaVersion ?? '<none>'} → ${SCHEMA_VERSION}, briefing cache cleared`,
+      );
+    }
+    return migrated;
+  }
+
+  // schema 一致直接合并
+  cached = { ...defaultState(), ...stored };
+  return cached;
 }
 
 export async function setState(patch: Partial<AppState>) {

@@ -140,6 +140,9 @@ export type BriefingItem = {
 };
 
 export type AppState = {
+  // 升级时 store 检测到老版本会丢弃 briefing / acknowledged / muted 等运行时缓存，
+  // 但保留 intro / selectedCli 这些用户配置。
+  schemaVersion: number;
   cliStatus: ProbeResult | null;
   selectedCli: 'claude' | 'codex' | null;
   intro: string;
