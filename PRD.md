@@ -349,7 +349,11 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - 加 `host-info` RPC + `PROTOCOL_VERSION` 元数据，扩展启动时握手，host 过旧 / 不一致就在 UI 顶端弹红/黄条 + 一键复制重装命令
   - 释出 `thunderclaw-native-host-v<v>.tar.gz` / `.zip`，Mac/Win 用户不用 git clone 整个仓库；Linux 仍优先 `.deb`
   - 堵掉"XPI 升了 host 没升 → 全部 `unknown method: llm-call` → 用户看到'今日无重要事项'但毫无提示"那个隐蔽坑
-- [ ] macOS `.pkg` / Windows `.msi` 安装器
+- [x] **Mac 一键脚本 install-mac.sh**（v0.1.19）：
+  - 一行命令：`curl -fsSL .../install-mac.sh | bash` —— 自动装 native host + 把 XPI 落进默认 profile 的 `extensions/` + 写 user.js（autoDisableScopes=0、xpinstall.signatures.required=false）+ 重启 TB
+  - 用 sideload 路径而不是 `.pkg`：不需要 Apple Developer ID 签名，无 Gatekeeper "无法验证开发者"弹窗
+  - 卸载：同一脚本带 `uninstall` 参数
+- [ ] macOS `.pkg` / Windows `.msi` 安装器（如真要 GUI 双击体验再做；当前一键脚本已覆盖大多数场景）
 - [ ] Rubric 文件（AI 自维护的判定标准）
 - [ ] 设置面板（CLI 切换、清除数据、编辑自我介绍）
 - [ ] 新邮件触发增量分析

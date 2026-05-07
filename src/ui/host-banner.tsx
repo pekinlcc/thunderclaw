@@ -39,12 +39,16 @@ function reinstallSnippet(version: string, os: 'mac' | 'linux' | 'win' | 'unknow
       'node scripts\\install-native-host.mjs',
     ].join('\n');
   }
-  // Mac / unknown
+  // Mac / unknown：一键脚本（拉 host + 落 XPI 进 profile + 关签名校验 + 自动重启 TB）
+  if (os === 'mac') {
+    return `curl -fsSL https://raw.githubusercontent.com/pekinlcc/thunderclaw/main/scripts/install-mac.sh | bash -s -- ${version}`;
+  }
+  // 其他平台兜底（手动 tarball）
   return [
     `curl -fsSL https://github.com/pekinlcc/thunderclaw/releases/download/v${version}/thunderclaw-native-host-v${version}.tar.gz | tar -xz`,
     `cd thunderclaw-native-host-v${version}`,
     'node scripts/install-native-host.mjs',
-    '# 然后完全退出 Thunderbird (Cmd+Q) 再重开',
+    '# 然后完全退出 Thunderbird 再重开',
   ].join('\n');
 }
 
