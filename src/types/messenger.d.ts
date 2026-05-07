@@ -83,6 +83,44 @@ declare namespace browser {
     function open(props: { messageId: number }): Promise<unknown>;
   }
 
+  // browser.calendar 在 TB 140 ESR 仍部分实验性，运行时按 typeof === 'function' 检测
+  namespace calendar {
+    namespace calendars {
+      type Calendar = {
+        id: string;
+        name: string;
+        type: string;
+        readOnly: boolean;
+        color?: string;
+      };
+      function query(filter?: { type?: string; readOnly?: boolean }): Promise<Calendar[]>;
+    }
+    namespace items {
+      type CalendarItem = {
+        id: string;
+        type: 'event' | 'task';
+        title: string;
+        startDate?: string;
+        endDate?: string;
+        dueDate?: string;
+        description?: string;
+        location?: string;
+      };
+      function create(
+        calendarId: string,
+        item: Partial<CalendarItem>,
+      ): Promise<CalendarItem>;
+    }
+  }
+
+  namespace downloads {
+    function download(opts: {
+      url: string;
+      filename?: string;
+      saveAs?: boolean;
+    }): Promise<number>;
+  }
+
   namespace compose {
     type ReplyType = 'replyToSender' | 'replyToAll' | 'replyToList';
     type ComposeDetails = {

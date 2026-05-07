@@ -13,6 +13,8 @@ import {
 import { openComposeFor } from './compose';
 import { getEmailPreview, markReadAndArchive, openOriginal } from './messages';
 import { generateReply } from './writer';
+import { extractEvent, extractTask } from './event-extractor';
+import { createCalendarEvent, createTask } from './calendar';
 import type { UIRequest } from '../shared/protocol';
 
 declare const messenger: typeof browser & {
@@ -140,6 +142,38 @@ browser.runtime.onMessage.addListener(async (raw: unknown) => {
       try {
         await openOriginal(req.messageId);
         return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+    case 'ui:create-calendar-event': {
+      const state = await getState();
+      const item = state.briefing.find((i) => i.id === req.itemId);
+      if (!item) return { ok: false, error: 'item not found' };
+      try {
+        const event = await extractEvent({ item, actionLabel: req.actionLabel });
+        if (!event) return { ok: false, error: '无法解析出事件信息' };
+        const result = await createCalendarEvent(event);
+        return { ok: result.ok, result, event };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+    case 'ui:create-task': {
+      const state = await getState();
+      const item = state.briefing.find((i) => i.id === req.itemId);
+      if (!item) return { ok: false, error: 'item not found' };
+      try {
+        const task = await extractTask({ item, actionLabel: req.actionLabel });
+        if (!task) return { ok: false, error: '无法解析出任务信息' };
+        const result = await createTask(task);
+        return { ok: result.ok, result, task };
       } catch (err) {
         return {
           ok: false,

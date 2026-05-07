@@ -1,4 +1,12 @@
-import type { AppState, EmailPreview, ProbeResult, UIRequest } from '../shared/protocol';
+import type {
+  AppState,
+  CreateActionResult,
+  EmailPreview,
+  ExtractedEvent,
+  ExtractedTask,
+  ProbeResult,
+  UIRequest,
+} from '../shared/protocol';
 
 async function send<T>(msg: UIRequest): Promise<T> {
   return (await browser.runtime.sendMessage(msg)) as T;
@@ -36,6 +44,20 @@ export const ui = {
       itemId,
       actionLabel,
     }),
+  createCalendarEvent: (itemId: string, actionLabel: string) =>
+    send<{
+      ok: boolean;
+      result?: CreateActionResult;
+      event?: ExtractedEvent;
+      error?: string;
+    }>({ kind: 'ui:create-calendar-event', itemId, actionLabel }),
+  createTask: (itemId: string, actionLabel: string) =>
+    send<{
+      ok: boolean;
+      result?: CreateActionResult;
+      task?: ExtractedTask;
+      error?: string;
+    }>({ kind: 'ui:create-task', itemId, actionLabel }),
   getEmailPreview: (messageId: number) =>
     send<{ ok: boolean; preview?: EmailPreview; error?: string }>({
       kind: 'ui:get-email-preview',

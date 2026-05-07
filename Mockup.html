@@ -787,9 +787,9 @@ const MOCK_ITEMS = [
     deadline: '建议今日内回复', emails: 5,
     actionType: 'reply',
     suggestedActions: [
-      { label: '回复确认本周内提交' },
-      { label: '回复请求延期到下周' },
-      { label: '回复反问具体填写要求' },
+      { kind: 'reply',    label: '回复确认本周内提交' },
+      { kind: 'reply',    label: '回复请求延期到下周' },
+      { kind: 'task',     label: '加任务 11/30 前填完报告' },
     ],
     reason: '上一封邮件你提到"周末填写"，今天已是 11/27 周三，建议今日内回复以避免拖延。语气参考过往沟通：简短、直接、保留中文敬语。',
   },
@@ -797,16 +797,17 @@ const MOCK_ITEMS = [
     id: 2, priority: 'high',
     contact: 'Sarah Mitchell', avatar: 'S', avatarColor: '#1373D9',
     email: 'sarah.mitchell@school.example',
-    title: '12/05 前确认 Winter Show 服装尺寸',
-    summary: 'Sarah 在过去 28 天连续发了 3 封邮件，最后一封要求在 12/05 前确认演出服装尺寸（尺码表见附件）。',
+    title: '12/10 PK Spring 演出确认',
+    summary: 'Sarah 在 11/26 通知 12/10 18:30 校礼堂的 PK Spring 演出，需要在 12/05 前回复是否参加并选择服装尺寸。',
     deadline: '12/05 截止 · 还剩 8 天', emails: 12,
     actionType: 'reply',
     suggestedActions: [
-      { label: 'Reply confirming Youth Medium' },
-      { label: 'Reply asking for sizing chart again' },
-      { label: 'Reply requesting two more days' },
+      { kind: 'reply',    label: '回复确认参加 + 尺寸 Youth Medium' },
+      { kind: 'reply',    label: '回复婉拒本次演出' },
+      { kind: 'calendar', label: '加日历 12/10 18:30 PK Spring 校礼堂' },
+      { kind: 'task',     label: '加任务 12/05 前确认尺寸' },
     ],
-    reason: '从邮件正文中识别到尺码表（XS/S/M/L/XL）。基于过往邮件中关于尺寸的讨论推断为 Youth Medium，请你确认。',
+    reason: '邮件含具体时间（12/10 18:30）和地点（校礼堂），需要加日历；同时有 12/05 截止的回复要求，建议同时加任务避免漏提交。',
   },
   {
     id: 3, priority: 'medium',
@@ -815,20 +816,23 @@ const MOCK_ITEMS = [
     title: '投资交易已完成',
     summary: '你参与的某项投资在 11/27 完成结算，可以查看最终文件和持仓证明。',
     deadline: '无紧急时限', emails: 3,
-    actionType: 'acknowledge',
-    suggestedActions: [],
+    suggestedActions: [
+      { kind: 'acknowledge', label: '我已知晓 - 投资完成通知' },
+    ],
     reason: '单次通知类邮件，含查看文档链接。无需回复，标记为已知晓即可。',
   },
   {
     id: 4, priority: 'medium',
     contact: 'Sample Service', avatar: 'S', avatarColor: '#FC5200',
     email: 'mail@service.example',
-    title: '服务条款更新',
+    title: '服务条款更新 12/26 生效',
     summary: '11/26 通知服务条款变更，将于 12/26 生效。变更涉及数据使用与会员权益条款。',
     deadline: '12/26 生效', emails: 1,
-    actionType: 'acknowledge',
-    suggestedActions: [],
-    reason: '通用条款更新邮件，群发模板。可以"已知晓"，无需回复。',
+    suggestedActions: [
+      { kind: 'acknowledge', label: '我已知晓 - 条款更新' },
+      { kind: 'task',        label: '加任务 12/26 前评估是否影响使用' },
+    ],
+    reason: '通用条款更新邮件，群发模板，但建议加一个评估任务避免到期才发现影响。',
   },
   {
     id: 5, priority: 'medium',
@@ -837,9 +841,10 @@ const MOCK_ITEMS = [
     title: '11 月对账单',
     summary: '11/24 出具的月度对账单。包含本月持仓变动和利息计算。',
     deadline: null, emails: 1,
-    actionType: 'acknowledge',
-    suggestedActions: [],
-    reason: '系统自动月结邮件。建议归档到"账单"文件夹，可设置自动规则。',
+    suggestedActions: [
+      { kind: 'acknowledge', label: '我已知晓 - 月结对账单' },
+    ],
+    reason: '系统自动月结邮件。建议归档到"账单"文件夹。',
   },
   {
     id: 6, priority: 'low',
@@ -848,9 +853,8 @@ const MOCK_ITEMS = [
     title: '防欺诈月度提醒',
     summary: '月度防欺诈宣传邮件。',
     deadline: null, emails: 1,
-    actionType: 'none',
     suggestedActions: [],
-    reason: '营销 / 教育类邮件。可以批量"已知晓"或退订。',
+    reason: '营销 / 教育类邮件，无需任何动作。可以"不重要 · 不再提示"批量过滤。',
   },
   {
     id: 7, priority: 'low',
@@ -859,8 +863,9 @@ const MOCK_ITEMS = [
     title: '账户登录提醒',
     summary: '11/27 03:08 你的账户在新设备上登录。',
     deadline: null, emails: 1,
-    actionType: 'acknowledge',
-    suggestedActions: [],
+    suggestedActions: [
+      { kind: 'acknowledge', label: '我已知晓 - 是我本人登录' },
+    ],
     reason: '系统通知邮件。如不是本人操作请尽快修改密码。',
   },
 ];
@@ -1003,51 +1008,66 @@ function BriefingC() {
             <div style={{ fontSize: 13, lineHeight: 1.6 }}>{item.summary}</div>
           </div>
 
-          {item.actionType === 'reply' && item.suggestedActions.length > 0 ? (
-            <div style={{
-              border: `1px solid ${tbStyles.borderSoft}`,
-              borderRadius: 8, marginBottom: 14, overflow: 'hidden',
-            }}>
+          {(() => {
+            const KIND = {
+              reply:       { color: '#1373D9', icon: '💬' },
+              calendar:    { color: '#2A8B3F', icon: '📅' },
+              task:        { color: '#6B4B8E', icon: '☑' },
+              acknowledge: { color: '#A37911', icon: '✓' },
+            };
+            const display = item.suggestedActions;
+            if (display.length === 0) {
+              return (
+                <div style={{
+                  background: '#FBFBFC', border: `1px solid ${tbStyles.borderSoft}`,
+                  borderRadius: 8, padding: '12px 16px',
+                  fontSize: 12.5, color: tbStyles.textMuted, marginBottom: 14,
+                }}>无需操作。</div>
+              );
+            }
+            return (
               <div style={{
-                padding: '10px 16px',
-                borderBottom: `1px solid ${tbStyles.borderSoft}`,
-                background: '#FFF',
-                display: 'flex', alignItems: 'center', gap: 8,
+                border: `1px solid ${tbStyles.borderSoft}`,
+                borderRadius: 8, marginBottom: 14, overflow: 'hidden',
               }}>
-                <span style={{ color: tbStyles.blue, display: 'inline-flex' }}><SidebarIcon name="sparkle" size={13} /></span>
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: tbStyles.blue, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-                  建议回应方式
-                </span>
-                <div style={{ flex: 1 }}/>
-                <span style={{ fontSize: 11, color: tbStyles.textFaint }}>点击生成具体回复</span>
+                <div style={{
+                  padding: '10px 16px',
+                  borderBottom: `1px solid ${tbStyles.borderSoft}`,
+                  background: '#FFF',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span style={{ color: tbStyles.blue, display: 'inline-flex' }}><SidebarIcon name="sparkle" size={13} /></span>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: tbStyles.blue, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                    建议处置方式
+                  </span>
+                  <div style={{ flex: 1 }}/>
+                  <span style={{ fontSize: 11, color: tbStyles.textFaint }}>点击执行 · 颜色按动作类型区分</span>
+                </div>
+                <div style={{
+                  padding: '12px 16px',
+                  display: 'flex', flexWrap: 'wrap', gap: 8,
+                }}>
+                  {display.map((a, i) => {
+                    const k = KIND[a.kind || 'reply'];
+                    return (
+                      <button key={i} style={{
+                        padding: '7px 12px', fontSize: 12,
+                        background: '#FFF',
+                        color: k.color,
+                        border: `1px solid ${k.color}`,
+                        borderRadius: 5, cursor: 'pointer', font: 'inherit',
+                        whiteSpace: 'nowrap',
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                      }}>
+                        <span style={{ fontSize: 11 }}>{k.icon}</span>
+                        <span>{a.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div style={{
-                padding: '12px 16px',
-                display: 'flex', flexWrap: 'wrap', gap: 8,
-              }}>
-                {item.suggestedActions.map((a, i) => (
-                  <button key={i} style={{
-                    padding: '7px 12px', fontSize: 12,
-                    background: i === 0 ? tbStyles.blue : '#FFF',
-                    color: i === 0 ? '#FFF' : tbStyles.text,
-                    border: i === 0 ? 'none' : `1px solid ${tbStyles.border}`,
-                    borderRadius: 5, cursor: 'pointer', font: 'inherit',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {a.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div style={{
-              background: '#FEF8E7', border: '1px solid #F2E0A8',
-              borderRadius: 8, padding: '12px 16px',
-              fontSize: 12.5, color: '#7A5A11', marginBottom: 14,
-            }}>
-              <strong>无需回复。</strong> 这是一封通知类邮件，确认后即可标记为已知晓。
-            </div>
-          )}
+            );
+          })()}
 
           <div style={{
             background: tbStyles.blueLight,
@@ -1060,14 +1080,8 @@ function BriefingC() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            {item.actionType !== 'reply' && (
-              <button style={{ ...btnStyle('primary'), padding: '7px 16px', fontSize: 12.5 }}>我已知晓</button>
-            )}
-            <button style={{ ...btnStyle('ghost'), padding: '7px 14px', fontSize: 12.5 }}>
-              查看 {item.emails} 封原邮件
-            </button>
-            <div style={{ flex: 1 }}/>
+          {/* 底部只剩 secondary 动作 */}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button style={{ ...btnStyle('ghost-subtle'), padding: '7px 12px', fontSize: 12 }}>
               不重要 · 不再提示
             </button>

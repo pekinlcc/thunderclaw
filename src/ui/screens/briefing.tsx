@@ -1,8 +1,300 @@
 import { useEffect, useState } from 'react';
 import { tbStyles } from '../styles';
 import { SparkleIcon } from '../icons';
-import type { BriefingItem, EmailPreview, Pipeline } from '../../shared/protocol';
+import type {
+  BriefingItem,
+  EmailPreview,
+  Pipeline,
+  SuggestedAction,
+  SuggestedActionKind,
+} from '../../shared/protocol';
 import { ui } from '../messaging';
+
+// ─── 按 kind 渲染动作按钮 ───────────────────────────────────────────
+const KIND_STYLES: Record<
+  SuggestedActionKind,
+  { color: string; bg: string; bgLight: string; icon: string; label: string }
+> = {
+  reply: {
+    color: '#1373D9',
+    bg: '#E8F1FB',
+    bgLight: '#F4F9FF',
+    icon: '💬',
+    label: '回复',
+  },
+  calendar: {
+    color: '#2A8B3F',
+    bg: '#E7F5EC',
+    bgLight: '#F2FAF5',
+    icon: '📅',
+    label: '加日历',
+  },
+  task: {
+    color: '#6B4B8E',
+    bg: '#EFE9F5',
+    bgLight: '#F8F5FB',
+    icon: '☑',
+    label: '加任务',
+  },
+  acknowledge: {
+    color: '#A37911',
+    bg: '#FEF8E7',
+    bgLight: '#FFFBED',
+    icon: '✓',
+    label: '已读+归档',
+  },
+};
+
+function ActionButton({
+  action,
+  running,
+  disabled,
+  onClick,
+}: {
+  action: SuggestedAction;
+  running: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const kind = (action.kind ?? 'reply') as SuggestedActionKind;
+  const s = KIND_STYLES[kind];
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || running}
+      title={`${s.label}动作`}
+      style={{
+        padding: '7px 12px',
+        fontSize: 12,
+        background: running ? s.bg : '#FFF',
+        color: s.color,
+        border: `1px solid ${s.color}`,
+        borderRadius: 5,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        font: 'inherit',
+        opacity: disabled ? 0.45 : 1,
+        whiteSpace: 'nowrap',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      <span style={{ fontSize: 11 }}>{s.icon}</span>
+      <span>{running ? '处理中…' : action.label}</span>
+    </button>
+  );
+}
+
+function ActionsBox({
+  item,
+  running,
+  actionError,
+  generated,
+  busy,
+  onRunReply,
+  onRunCalendar,
+  onRunTask,
+  onAck,
+  onOpenCompose,
+  onCopyGenerated,
+}: {
+  item: BriefingItem;
+  running: string | null;
+  actionError: string | null;
+  generated: { actionLabel: string; text: string } | null;
+  busy: boolean;
+  onRunReply: (label: string) => void;
+  onRunCalendar: (label: string) => void;
+  onRunTask: (label: string) => void;
+  onAck: () => void;
+  onOpenCompose: () => void;
+  onCopyGenerated: () => void;
+}) {
+  // Pulse agent 直接输出 kind=acknowledge 的动作，UI 不再合成
+  const displayActions: SuggestedAction[] = item.suggestedActions;
+
+  if (displayActions.length === 0) {
+    return (
+      <div
+        style={{
+          background: '#FBFBFC',
+          border: `1px solid ${tbStyles.borderSoft}`,
+          borderRadius: 8,
+          padding: '12px 16px',
+          fontSize: 12.5,
+          color: tbStyles.textMuted,
+          marginBottom: 14,
+        }}
+      >
+        无需操作。
+      </div>
+    );
+  }
+
+  function handleClick(action: SuggestedAction) {
+    const kind = action.kind ?? 'reply';
+    if (kind === 'reply') onRunReply(action.label);
+    else if (kind === 'calendar') onRunCalendar(action.label);
+    else if (kind === 'task') onRunTask(action.label);
+    else if (kind === 'acknowledge') onAck();
+  }
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${tbStyles.borderSoft}`,
+        borderRadius: 8,
+        marginBottom: 14,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          padding: '10px 16px',
+          borderBottom: `1px solid ${tbStyles.borderSoft}`,
+          background: '#FFF',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <span style={{ color: tbStyles.blue, display: 'inline-flex' }}>
+          <SparkleIcon size={13} color={tbStyles.blue} />
+        </span>
+        <span
+          style={{
+            fontSize: 11.5,
+            fontWeight: 600,
+            color: tbStyles.blue,
+            textTransform: 'uppercase',
+            letterSpacing: '.04em',
+          }}
+        >
+          建议处置方式
+        </span>
+        <span
+          style={{ fontSize: 11, color: tbStyles.textFaint, marginLeft: 'auto' }}
+        >
+          点击执行 · 颜色按动作类型区分
+        </span>
+      </div>
+      <div
+        style={{
+          padding: '12px 16px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 8,
+        }}
+      >
+        {displayActions.map((action, i) => (
+          <ActionButton
+            key={`${action.label}-${i}`}
+            action={action}
+            running={running === action.label}
+            disabled={(running !== null || busy) && running !== action.label}
+            onClick={() => handleClick(action)}
+          />
+        ))}
+      </div>
+      {(generated || actionError) && (
+        <div
+          style={{
+            borderTop: `1px solid ${tbStyles.borderSoft}`,
+            background: '#FBFBFC',
+          }}
+        >
+          {actionError && (
+            <div style={{ padding: '12px 16px', color: '#C44A2C', fontSize: 12 }}>
+              出错：{actionError}
+            </div>
+          )}
+          {generated && (
+            <>
+              <div
+                style={{
+                  padding: '8px 16px',
+                  fontSize: 11,
+                  color: tbStyles.textMuted,
+                  borderBottom: `1px solid ${tbStyles.borderSoft}`,
+                }}
+              >
+                基于 "{generated.actionLabel}" 生成的回复
+              </div>
+              <div
+                style={{
+                  padding: '14px 16px',
+                  fontSize: 13,
+                  lineHeight: 1.65,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {generated.text}
+              </div>
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderTop: `1px solid ${tbStyles.borderSoft}`,
+                  display: 'flex',
+                  gap: 8,
+                  background: '#FFF',
+                }}
+              >
+                <button
+                  onClick={onOpenCompose}
+                  disabled={busy}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    background: tbStyles.blue,
+                    color: '#FFF',
+                    border: 'none',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
+                >
+                  在撰写窗口打开
+                </button>
+                <button
+                  onClick={onCopyGenerated}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    background: '#FFF',
+                    color: tbStyles.text,
+                    border: `1px solid ${tbStyles.border}`,
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
+                >
+                  复制
+                </button>
+                <button
+                  onClick={() => onRunReply(generated.actionLabel)}
+                  disabled={running !== null}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    background: '#FFF',
+                    color: tbStyles.text,
+                    border: `1px solid ${tbStyles.border}`,
+                    borderRadius: 4,
+                    cursor: running !== null ? 'not-allowed' : 'pointer',
+                    font: 'inherit',
+                  }}
+                >
+                  重新生成
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Toast ────────────────────────────────────────────────────────
 type ToastKind = 'success' | 'warning' | 'error';
@@ -543,31 +835,70 @@ export function BriefingScreen({
     actionLabel: string;
     text: string;
   } | null>(null);
-  const [generating, setGenerating] = useState<string | null>(null); // 正在生成哪个 action
-  const [genError, setGenError] = useState<string | null>(null);
+  // 正在跑哪个 action（label 唯一定位）+ 错误
+  const [running, setRunning] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  // item 切换时清掉 generated 状态
+  // item 切换时清掉跨 item 的状态
   useEffect(() => {
     setGenerated(null);
-    setGenerating(null);
-    setGenError(null);
+    setRunning(null);
+    setActionError(null);
   }, [item?.id]);
 
-  async function runAction(actionLabel: string) {
+  async function runReplyAction(actionLabel: string) {
     if (!item) return;
-    setGenerating(actionLabel);
-    setGenError(null);
+    setRunning(actionLabel);
+    setActionError(null);
     try {
       const res = await ui.generateReply(item.id, actionLabel);
       if (res.ok && res.text) {
         setGenerated({ actionLabel, text: res.text });
       } else {
-        setGenError(res.error || '生成失败');
+        setActionError(res.error || '生成失败');
       }
     } catch (err) {
-      setGenError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
-      setGenerating(null);
+      setRunning(null);
+    }
+  }
+
+  async function runCalendarAction(actionLabel: string) {
+    if (!item) return;
+    setRunning(actionLabel);
+    setActionError(null);
+    try {
+      const res = await ui.createCalendarEvent(item.id, actionLabel);
+      if (res.ok && res.result) {
+        showToast('success', `✓ ${res.result.detail}`);
+      } else {
+        const msg = res.result?.detail || res.error || '创建失败';
+        showToast('error', `日历创建失败：${msg}`);
+      }
+    } catch (err) {
+      showToast('error', `日历创建失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  async function runTaskAction(actionLabel: string) {
+    if (!item) return;
+    setRunning(actionLabel);
+    setActionError(null);
+    try {
+      const res = await ui.createTask(item.id, actionLabel);
+      if (res.ok && res.result) {
+        showToast('success', `✓ ${res.result.detail}`);
+      } else {
+        const msg = res.result?.detail || res.error || '创建失败';
+        showToast('error', `任务创建失败：${msg}`);
+      }
+    } catch (err) {
+      showToast('error', `任务创建失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setRunning(null);
     }
   }
 
@@ -774,192 +1105,21 @@ export function BriefingScreen({
 
           <WhatHappenedSection item={item} />
 
-          {/* 建议动作区域：actionType=reply 时显示一组动作按钮；
-               用户点击后内联展开生成的回复正文。 */}
-          {item.actionType === 'reply' && item.suggestedActions.length > 0 ? (
-            <div
-              style={{
-                border: `1px solid ${tbStyles.borderSoft}`,
-                borderRadius: 8,
-                marginBottom: 14,
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  padding: '10px 16px',
-                  borderBottom: `1px solid ${tbStyles.borderSoft}`,
-                  background: '#FFF',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <span style={{ color: tbStyles.blue, display: 'inline-flex' }}>
-                  <SparkleIcon size={13} color={tbStyles.blue} />
-                </span>
-                <span
-                  style={{
-                    fontSize: 11.5,
-                    fontWeight: 600,
-                    color: tbStyles.blue,
-                    textTransform: 'uppercase',
-                    letterSpacing: '.04em',
-                  }}
-                >
-                  建议回应方式
-                </span>
-                <span
-                  style={{ fontSize: 11, color: tbStyles.textFaint, marginLeft: 'auto' }}
-                >
-                  点击生成具体回复
-                </span>
-              </div>
-              <div
-                style={{
-                  padding: '12px 16px',
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 8,
-                }}
-              >
-                {item.suggestedActions.map((action, i) => {
-                  const isSelected = generated?.actionLabel === action.label;
-                  const isLoading = generating === action.label;
-                  const disabled = generating !== null && !isLoading;
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => runAction(action.label)}
-                      disabled={disabled || isLoading}
-                      style={{
-                        padding: '7px 12px',
-                        fontSize: 12,
-                        background: isSelected
-                          ? tbStyles.blueLight
-                          : i === 0
-                          ? tbStyles.blue
-                          : '#FFF',
-                        color: isSelected
-                          ? tbStyles.blue
-                          : i === 0
-                          ? '#FFF'
-                          : tbStyles.text,
-                        border:
-                          isSelected
-                            ? `1px solid ${tbStyles.blue}`
-                            : i === 0
-                            ? 'none'
-                            : `1px solid ${tbStyles.border}`,
-                        borderRadius: 5,
-                        cursor: disabled ? 'not-allowed' : 'pointer',
-                        font: 'inherit',
-                        opacity: disabled ? 0.5 : 1,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {isLoading ? '生成中…' : action.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {(generated || genError) && (
-                <div
-                  style={{
-                    borderTop: `1px solid ${tbStyles.borderSoft}`,
-                    background: '#FBFBFC',
-                  }}
-                >
-                  {genError && (
-                    <div style={{ padding: '12px 16px', color: '#C44A2C', fontSize: 12 }}>
-                      生成失败：{genError}
-                    </div>
-                  )}
-                  {generated && (
-                    <>
-                      <div
-                        style={{
-                          padding: '8px 16px',
-                          fontSize: 11,
-                          color: tbStyles.textMuted,
-                          borderBottom: `1px solid ${tbStyles.borderSoft}`,
-                        }}
-                      >
-                        基于 "{generated.actionLabel}" 生成的回复
-                      </div>
-                      <div
-                        style={{
-                          padding: '14px 16px',
-                          fontSize: 13,
-                          lineHeight: 1.65,
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word',
-                        }}
-                      >
-                        {generated.text}
-                      </div>
-                      <div
-                        style={{
-                          padding: '8px 12px',
-                          borderTop: `1px solid ${tbStyles.borderSoft}`,
-                          display: 'flex',
-                          gap: 8,
-                          background: '#FFF',
-                        }}
-                      >
-                        <button
-                          onClick={openComposeWithGenerated}
-                          disabled={busy}
-                          style={{
-                            ...btnStyle('primary'),
-                            padding: '6px 12px',
-                            fontSize: 12,
-                          }}
-                        >
-                          在撰写窗口打开
-                        </button>
-                        <button
-                          onClick={copyGenerated}
-                          style={{
-                            ...btnStyle('ghost'),
-                            padding: '6px 12px',
-                            fontSize: 12,
-                          }}
-                        >
-                          复制
-                        </button>
-                        <button
-                          onClick={() => runAction(generated.actionLabel)}
-                          disabled={generating !== null}
-                          style={{
-                            ...btnStyle('ghost'),
-                            padding: '6px 12px',
-                            fontSize: 12,
-                          }}
-                        >
-                          重新生成
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div
-              style={{
-                background: '#FEF8E7',
-                border: '1px solid #F2E0A8',
-                borderRadius: 8,
-                padding: '12px 16px',
-                fontSize: 12.5,
-                color: '#7A5A11',
-                marginBottom: 14,
-              }}
-            >
-              <strong>无需回复。</strong> 这是一封通知类邮件，确认后即可标记为已知晓。
-            </div>
-          )}
+          {/* 建议处置方式：所有动作（reply / calendar / task / 我已知晓）都在这一个卡里
+               点击后视 kind 走不同处理路径 */}
+          <ActionsBox
+            item={item}
+            running={running}
+            actionError={actionError}
+            generated={generated}
+            busy={busy}
+            onRunReply={runReplyAction}
+            onRunCalendar={runCalendarAction}
+            onRunTask={runTaskAction}
+            onAck={ack}
+            onOpenCompose={openComposeWithGenerated}
+            onCopyGenerated={copyGenerated}
+          />
 
           {item.reason && (
             <div
@@ -979,17 +1139,8 @@ export function BriefingScreen({
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {item.actionType !== 'reply' && (
-              <button
-                onClick={ack}
-                disabled={busy}
-                style={{ ...btnStyle('primary'), padding: '7px 16px' }}
-              >
-                我已知晓
-              </button>
-            )}
-            <div style={{ flex: 1 }} />
+          {/* 底部只剩 secondary 动作。"我已知晓" 已并入 ActionsBox 里 */}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button
               onClick={mute}
               disabled={busy}
