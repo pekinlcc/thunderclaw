@@ -93,18 +93,28 @@ export async function createCalendarEvent(
     }
   }
 
-  // 2) Fallback: .ics 数据下载（TB 双击 .ics 会让你导入到日历）
+  // 2) Fallback: 静默下载 .ics → 自动用 TB 打开 → TB 弹日历导入对话框
   try {
     const ics = buildICS(event);
     const blob = new Blob([ics], { type: 'text/calendar' });
     const url = URL.createObjectURL(blob);
     const filename = `thunderclaw-event-${Date.now()}.ics`;
-    await browser.downloads.download({ url, filename, saveAs: true });
+    const downloadId = await browser.downloads.download({
+      url,
+      filename,
+      saveAs: false, // **关键**：不弹保存对话框，直接进 Downloads
+    });
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    // 自动用系统默认 app 打开 .ics —— 在 TB 内会触发 calendar import 对话框
+    try {
+      await browser.downloads.open(downloadId);
+    } catch (err) {
+      console.warn('[ThunderClaw] downloads.open failed, .ics 仍在 Downloads:', err);
+    }
     return {
       ok: true,
       via: 'fallback-ics',
-      detail: `日历 API 不可用，已生成 ${filename} 让你下载并双击导入到 Thunderbird 日历`,
+      detail: '已生成 .ics，Thunderbird 会弹一个日历导入提示，点确认即可',
     };
   } catch (err) {
     // 3) 最终兜底：剪贴板
@@ -145,7 +155,7 @@ export async function createTask(task: ExtractedTask): Promise<CreateActionResul
     }
   }
 
-  // 2) 兜底：把任务详情拼成文字让用户粘贴。直接用一个 .ics 文件包含 VTODO
+  // 2) 兜底：静默下载 VTODO .ics → 自动用 TB 打开 → 任务导入对话框
   try {
     const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@thunderclaw`;
     const due = task.dueISO ? fmtICSDate(task.dueISO, false) : '';
@@ -164,12 +174,21 @@ export async function createTask(task: ExtractedTask): Promise<CreateActionResul
     const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
     const url = URL.createObjectURL(blob);
     const filename = `thunderclaw-task-${Date.now()}.ics`;
-    await browser.downloads.download({ url, filename, saveAs: true });
+    const downloadId = await browser.downloads.download({
+      url,
+      filename,
+      saveAs: false,
+    });
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    try {
+      await browser.downloads.open(downloadId);
+    } catch (err) {
+      console.warn('[ThunderClaw] downloads.open failed, .ics 仍在 Downloads:', err);
+    }
     return {
       ok: true,
       via: 'fallback-ics',
-      detail: `任务 API 不可用，已生成 ${filename} 让你下载并双击导入`,
+      detail: '已生成 .ics，Thunderbird 会弹任务导入提示，点确认即可',
     };
   } catch (err) {
     return {

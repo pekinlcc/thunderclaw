@@ -119,6 +119,8 @@ declare namespace browser {
       filename?: string;
       saveAs?: boolean;
     }): Promise<number>;
+    // 用系统默认 app 打开下载好的文件（.ics → TB calendar import）
+    function open(downloadId: number): Promise<void>;
   }
 
   namespace compose {
