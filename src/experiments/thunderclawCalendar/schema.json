@@ -1,0 +1,29 @@
+[
+  {
+    "namespace": "thunderclawCalendar",
+    "types": [
+      {
+        "id": "DirectCreateResult",
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "calendarId": { "type": "string" },
+          "calendarName": { "type": "string" },
+          "itemId": { "type": "string", "optional": true }
+        }
+      }
+    ],
+    "functions": [
+      {
+        "name": "createFromICS",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          { "name": "ics", "type": "string" },
+          { "name": "type", "type": "string", "enum": ["event", "task"] }
+        ],
+        "returns": { "$ref": "DirectCreateResult" }
+      }
+    ]
+  }
+]

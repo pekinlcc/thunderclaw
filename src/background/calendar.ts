@@ -1,10 +1,11 @@
 // Calendar / Task 创建。
-// 三层路径，从最优雅到兜底：
-//   1) messenger.calendar.*    —— TB 内置 API；TB 128 标准表面其实没暴露这个 namespace，
-//                                 大概率是 undefined，但留着以防未来 TB 把它正式开放
-//   2) NMH open-calendar-ics    —— native host 写 tmp.ics + 显式 spawn TB 打开它，
+// 四层路径，从最直接到兜底：
+//   1) thunderclawCalendar.*    —— 本扩展的 Experiment API，直接 adoptItem 到 TB 日历/任务；
+//                                 普通 MailExtension 没有官方 calendar create API
+//   2) messenger.calendar.*     —— 外部 calendar experiment / 未来 TB API；用 iCalendar raw item
+//   3) NMH open-calendar-ics    —— native host 写 tmp.ics + 显式 spawn TB 打开它，
 //                                 TB 自己弹原生导入对话框，用户点一下"导入"就完事
-//   3) browser.downloads        —— 最后兜底，文件落 ~/Downloads/，提示用户手动双击
+//   4) browser.downloads        —— 最后兜底，文件落 ~/Downloads/，提示用户手动双击
 
 import type {
   CreateActionResult,
@@ -13,8 +14,32 @@ import type {
 } from '../shared/protocol';
 import { nativeHost } from './native-host';
 
-// 是否能用 native calendar API（TB 140 ESR 起部分可用）
-function calendarApiAvailable(): boolean {
+type CalendarItemType = 'event' | 'task';
+
+// 本扩展自己的 direct-create Experiment API。
+function thunderclawCalendarApiAvailable(): boolean {
+  const api = (browser as any).thunderclawCalendar;
+  const ok = !!(api && typeof api.createFromICS === 'function');
+  console.log('[ThunderClaw][calendar] thunderclaw direct API available?', ok);
+  return ok;
+}
+
+async function createViaThunderclawCalendarAPI(
+  ics: string,
+  type: CalendarItemType,
+): Promise<CreateActionResult | null> {
+  if (!thunderclawCalendarApiAvailable()) return null;
+  const api = (browser as any).thunderclawCalendar;
+  const created = await api.createFromICS(ics, type);
+  return {
+    ok: true,
+    via: 'native-api',
+    detail: `已直接添加到${type === 'task' ? '任务' : '日历'} "${created.calendarName}"`,
+  };
+}
+
+// 是否能用 calendar experiment / 未来 native calendar API。
+function draftCalendarApiAvailable(): boolean {
   const cal = (browser as any).calendar;
   const ok = !!(
     cal &&
@@ -23,8 +48,39 @@ function calendarApiAvailable(): boolean {
     cal.items &&
     typeof cal.items.create === 'function'
   );
-  console.log('[ThunderClaw][calendar] native API available?', ok);
+  console.log('[ThunderClaw][calendar] draft calendar API available?', ok);
   return ok;
+}
+
+async function createViaDraftCalendarAPI(
+  ics: string,
+  type: CalendarItemType,
+): Promise<CreateActionResult | null> {
+  if (!draftCalendarApiAvailable()) return null;
+  const cal: any = (browser as any).calendar;
+  const calendars = await cal.calendars.query({ readOnly: false, enabled: true });
+  const writable = calendars.filter((c: any) => !c.readOnly);
+  if (writable.length === 0) return null;
+
+  let lastError: unknown = null;
+  for (const calendar of writable) {
+    try {
+      await cal.items.create(calendar.id, {
+        type,
+        format: 'ical',
+        item: ics,
+      });
+      return {
+        ok: true,
+        via: 'native-api',
+        detail: `已直接添加到${type === 'task' ? '任务' : '日历'} "${calendar.name}"`,
+      };
+    } catch (err) {
+      lastError = err;
+      console.warn('[ThunderClaw] draft calendar create failed for', calendar.name, err);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 function fmtICSDate(iso: string | null, allDay: boolean): string {
@@ -125,41 +181,30 @@ export function buildICS(event: ExtractedEvent): string {
 export async function createCalendarEvent(
   event: ExtractedEvent,
 ): Promise<CreateActionResult> {
-  // 1) Native API 路径
-  if (calendarApiAvailable() && event.startISO) {
-    try {
-      const cal: any = (browser as any).calendar;
-      const calendars = await cal.calendars.query({ type: 'event' });
-      // 优先非只读的本地日历；没有就第一个可写的
-      const writable = calendars.find((c: any) => !c.readOnly);
-      if (writable) {
-        await cal.items.create(writable.id, {
-          type: 'event',
-          title: event.title,
-          startDate: event.startISO,
-          endDate: event.endISO ?? event.startISO,
-          description: event.description ?? '',
-          location: event.location ?? '',
-        });
-        return {
-          ok: true,
-          via: 'native-api',
-          detail: `已添加到日历 "${writable.name}"`,
-        };
-      }
-    } catch (err) {
-      console.warn('[ThunderClaw] calendar.items.create failed:', err);
-      // fall through
-    }
+  const ics = buildICS(event);
+
+  // 1) Direct Experiment API：不打开 .ics 导入向导
+  try {
+    const direct = await createViaThunderclawCalendarAPI(ics, 'event');
+    if (direct) return direct;
+  } catch (err) {
+    console.warn('[ThunderClaw] thunderclawCalendar.createFromICS(event) failed:', err);
   }
 
-  // 2) NMH 路径：让 native host spawn TB 打开 .ics，TB 内部弹原生导入对话框
-  const ics = buildICS(event);
+  // 2) Calendar experiment / future native API
+  try {
+    const direct = await createViaDraftCalendarAPI(ics, 'event');
+    if (direct) return direct;
+  } catch (err) {
+    console.warn('[ThunderClaw] calendar.items.create(event) failed:', err);
+  }
+
+  // 3) NMH 路径：让 native host spawn TB 打开 .ics，TB 内部弹原生导入对话框
   try {
     await nativeHost.openCalendarICS(ics);
     return {
       ok: true,
-      via: 'native-api',
+      via: 'fallback-ics',
       detail: 'Thunderbird 已弹日历导入对话框，点"导入"即可',
     };
   } catch (err) {
@@ -167,7 +212,7 @@ export async function createCalendarEvent(
     // 老 host（pre-v0.1.20，没这个方法）→ 落到 downloads 兜底
   }
 
-  // 3) Downloads 兜底：文件落进 ~/Downloads/ThunderClaw/ + 试着 downloads.open
+  // 4) Downloads 兜底：文件落进 ~/Downloads/ThunderClaw/ + 试着 downloads.open
   try {
     const filename = `event-${Date.now()}.ics`;
     const r = await downloadAndOpenICS(filename, ics);
@@ -190,34 +235,6 @@ export async function createCalendarEvent(
 }
 
 export async function createTask(task: ExtractedTask): Promise<CreateActionResult> {
-  // 1) Native API
-  if (calendarApiAvailable()) {
-    try {
-      const cal: any = (browser as any).calendar;
-      const taskCals = await cal.calendars.query({ type: 'task' });
-      const writable =
-        taskCals.find((c: any) => !c.readOnly) ??
-        (await cal.calendars.query({ type: 'event' })).find((c: any) => !c.readOnly);
-      if (writable) {
-        const item: any = {
-          type: 'task',
-          title: task.title,
-          description: task.notes ?? '',
-        };
-        if (task.dueISO) item.dueDate = task.dueISO;
-        await cal.items.create(writable.id, item);
-        return {
-          ok: true,
-          via: 'native-api',
-          detail: `已添加到任务 "${writable.name}"`,
-        };
-      }
-    } catch (err) {
-      console.warn('[ThunderClaw] task create failed:', err);
-    }
-  }
-
-  // 2) NMH 路径：和 createCalendarEvent 同样走 host spawn TB 打开 .ics
   const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@thunderclaw`;
   const due = task.dueISO ? fmtICSDate(task.dueISO, false) : '';
   const lines = [
@@ -234,18 +251,35 @@ export async function createTask(task: ExtractedTask): Promise<CreateActionResul
   lines.push('END:VTODO', 'END:VCALENDAR');
   const ics = lines.join('\r\n');
 
+  // 1) Direct Experiment API：不打开 .ics 导入向导
+  try {
+    const direct = await createViaThunderclawCalendarAPI(ics, 'task');
+    if (direct) return direct;
+  } catch (err) {
+    console.warn('[ThunderClaw] thunderclawCalendar.createFromICS(task) failed:', err);
+  }
+
+  // 2) Calendar experiment / future native API
+  try {
+    const direct = await createViaDraftCalendarAPI(ics, 'task');
+    if (direct) return direct;
+  } catch (err) {
+    console.warn('[ThunderClaw] calendar.items.create(task) failed:', err);
+  }
+
+  // 3) NMH 路径：和 createCalendarEvent 同样走 host spawn TB 打开 .ics
   try {
     await nativeHost.openCalendarICS(ics);
     return {
       ok: true,
-      via: 'native-api',
+      via: 'fallback-ics',
       detail: 'Thunderbird 已弹任务导入对话框，点"导入"即可',
     };
   } catch (err) {
     console.warn('[ThunderClaw][calendar] NMH open-calendar-ics (task) failed:', err);
   }
 
-  // 3) Downloads 兜底
+  // 4) Downloads 兜底
   try {
     const r = await downloadAndOpenICS(`task-${Date.now()}.ics`, ics);
     return {

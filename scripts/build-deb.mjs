@@ -80,16 +80,44 @@ copyFileSync(join(PKG_DIR, 'postrm'), join(STAGING, 'DEBIAN/postrm'));
 chmodSync(join(STAGING, 'DEBIAN/postinst'), 0o755);
 chmodSync(join(STAGING, 'DEBIAN/postrm'), 0o755);
 
-// ─── 跑 dpkg-deb --build ────────────────────────────
+// ─── 跑 dpkg-deb --build；macOS 没 dpkg-deb 时按 .deb ar 格式手工打包 ──────────
 const outDir = join(ROOT, 'dist', 'release');
 mkdirSync(outDir, { recursive: true });
 const outFile = join(outDir, `thunderclaw_${VERSION}_all.deb`);
 rmSync(outFile, { force: true });
-execSync(`dpkg-deb --root-owner-group --build "${STAGING}" "${outFile}"`, {
-  stdio: 'inherit',
-});
+
+function hasCommand(cmd) {
+  try {
+    execSync(`command -v ${cmd}`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+if (hasCommand('dpkg-deb')) {
+  execSync(`dpkg-deb --root-owner-group --build "${STAGING}" "${outFile}"`, {
+    stdio: 'inherit',
+  });
+} else {
+  const parts = join(ROOT, 'dist', 'deb-parts');
+  rmSync(parts, { recursive: true, force: true });
+  mkdirSync(parts, { recursive: true });
+  writeFileSync(join(parts, 'debian-binary'), '2.0\n');
+  execSync(
+    `tar --uid 0 --gid 0 --uname root --gname root -czf "${join(parts, 'control.tar.gz')}" -C "${join(STAGING, 'DEBIAN')}" .`,
+    { stdio: 'inherit' },
+  );
+  execSync(
+    `tar --uid 0 --gid 0 --uname root --gname root --exclude ./DEBIAN -czf "${join(parts, 'data.tar.gz')}" -C "${STAGING}" .`,
+    { stdio: 'inherit' },
+  );
+  execSync(
+    `cd "${parts}" && ar -qcS "${outFile}" debian-binary control.tar.gz data.tar.gz`,
+    { stdio: 'inherit' },
+  );
+}
 console.log(`\n✓ ${outFile}`);
 console.log('\n试装：');
 console.log(`  sudo dpkg -i ${outFile}`);
 console.log('  sudo apt-get install -f         # 修任何缺失依赖（如 nodejs）\n');
-

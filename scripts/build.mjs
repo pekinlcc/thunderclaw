@@ -38,6 +38,7 @@ async function copyStatic() {
   await copyTree(join(SRC, 'manifest.json'), join(DIST, 'manifest.json'));
   await copyTree(join(SRC, 'ui', 'ai-view.html'), join(DIST, 'ai-view.html'));
   await copyTree(join(SRC, 'icons'), join(DIST, 'icons'));
+  await copyTree(join(SRC, 'experiments'), join(DIST, 'experiments'));
 }
 
 async function copyTree(from, to) {
