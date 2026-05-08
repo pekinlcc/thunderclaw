@@ -4,7 +4,7 @@ Section: mail
 Priority: optional
 Architecture: all
 Depends: nodejs (>= 18)
-Recommends: thunderbird (>= 128)
+Suggests: thunderbird (>= 128)
 Maintainer: pekinlcc <pekinlcc@gmail.com>
 Homepage: https://github.com/pekinlcc/thunderclaw
 Description: AI mail assistant for Thunderbird

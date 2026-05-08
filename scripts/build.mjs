@@ -38,7 +38,12 @@ async function copyStatic() {
   await copyTree(join(SRC, 'manifest.json'), join(DIST, 'manifest.json'));
   await copyTree(join(SRC, 'ui', 'ai-view.html'), join(DIST, 'ai-view.html'));
   await copyTree(join(SRC, 'icons'), join(DIST, 'icons'));
-  await copyTree(join(SRC, 'experiments'), join(DIST, 'experiments'));
+  // experiments/ 只在 manifest.json 里声明 experiment_apis 时才 copy。
+  // 目前未签名状态下走不了 experiment_apis（mozillaAddons 权限被 TB 拒），保留代码但不打包。
+  const manifestRaw = await readFile(join(SRC, 'manifest.json'), 'utf8');
+  if (/experiment_apis/.test(manifestRaw)) {
+    await copyTree(join(SRC, 'experiments'), join(DIST, 'experiments'));
+  }
 }
 
 async function copyTree(from, to) {

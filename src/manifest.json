@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "ThunderClaw",
   "description": "AI 邮件助手，由本地 Claude Code / Codex CLI 驱动",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": "pekinlcc",
   "browser_specific_settings": {
     "gecko": {
@@ -24,19 +24,8 @@
     "storage",
     "nativeMessaging",
     "downloads",
-    "downloads.open",
-    "mozillaAddons"
+    "downloads.open"
   ],
-  "experiment_apis": {
-    "thunderclawCalendar": {
-      "schema": "experiments/thunderclawCalendar/schema.json",
-      "parent": {
-        "scopes": ["addon_parent"],
-        "script": "experiments/thunderclawCalendar/implementation.js",
-        "paths": [["thunderclawCalendar"]]
-      }
-    }
-  },
   "icons": {
     "32": "icons/icon-32.png",
     "64": "icons/icon-64.png",

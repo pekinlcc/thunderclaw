@@ -349,6 +349,7 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - 加 `host-info` RPC + `PROTOCOL_VERSION` 元数据，扩展启动时握手，host 过旧 / 不一致就在 UI 顶端弹红/黄条 + 一键复制重装命令
   - 释出 `thunderclaw-native-host-v<v>.tar.gz` / `.zip`，Mac/Win 用户不用 git clone 整个仓库；Linux 仍优先 `.deb`
   - 堵掉"XPI 升了 host 没升 → 全部 `unknown method: llm-call` → 用户看到'今日无重要事项'但毫无提示"那个隐蔽坑
+- [x] **解掉 v0.2.0 的 mozillaAddons 坑**（v0.2.1，紧急 hotfix）：v0.1.23 在 manifest 里加的 `experiment_apis` + `mozillaAddons` 权限要求 XPI 已签名，未签名 XPI 在 TB ESR/release 上**整个加载不上**——v0.2.0 装上去用户连扩展图标都看不到。v0.2.1 把这两块从 manifest.json 拿掉，build 时跳过 `experiments/` 目录的打包（代码留着，等 AMO 签名后再开）；`packaging/deb/control.template` 的 `Recommends: thunderbird` 改 `Suggests`，避免 .deb 安装时 apt 自动把 snap thunderbird 拽回来。
 - [x] **新邮件触发增量重算 + 简报顶端总览条**（v0.2.0）：
   - 新邮件到达 → background 监听 `messages.onNewMailReceived` → 把发件人塞 debounce 队列（30 秒）→ 到期后只对受影响联系人重 Pulse + 全量重 Briefing（产出新顺序 + 新 overview）
   - 用户在简报顶端 toggle 一键关掉自动重算（默认开）
