@@ -2,8 +2,7 @@ Package: thunderclaw
 Version: __VERSION__
 Section: mail
 Priority: optional
-Architecture: all
-Depends: nodejs (>= 18)
+Architecture: amd64
 Suggests: thunderbird (>= 128)
 Maintainer: pekinlcc <pekinlcc@gmail.com>
 Homepage: https://github.com/pekinlcc/thunderclaw

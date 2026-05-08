@@ -6,9 +6,11 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "build:deb": "npm run build && node scripts/build-deb.mjs",
-    "build:host-tarball": "npm run build && node scripts/build-host-tarball.mjs",
-    "build:release": "npm run build && node scripts/build-deb.mjs && node scripts/build-host-tarball.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:deb": "npm run build && npm run build:host && node scripts/build-deb.mjs",
+    "build:host-tarball": "npm run build:host && node scripts/build-host-tarball.mjs",
+    "build:release": "npm run build && npm run build:host && node scripts/build-deb.mjs && node scripts/build-host-tarball.mjs",
+    "sign": "node scripts/sign.mjs",
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "start": "npm run build && web-ext run --source-dir=dist/extension --firefox=/usr/bin/thunderbird --no-reload"

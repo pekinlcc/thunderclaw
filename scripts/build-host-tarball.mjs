@@ -1,22 +1,32 @@
 #!/usr/bin/env node
-// 把 native-host/ + 安装脚本打成 tarball + zip，挂在 GitHub Release 上给 Mac/Win 用户用。
-// Linux 用户优先用 .deb（XPI + native host 一起装）；这个 tarball 是给没 .deb 的 OS 兜底。
+// 把所有平台的 Go binary 打包成 tarball + zip 给 release 用。
+// Linux 用户优先 .deb；这个 tarball 是 Mac/Win/Linux ARM 等场景的兜底。
 //
 // 输出：
 //   dist/release/thunderclaw-native-host-v<version>.tar.gz
-//   dist/release/thunderclaw-native-host-v<version>.zip   (Windows 友好)
+//   dist/release/thunderclaw-native-host-v<version>.zip
 //
-// 用户解包后跑 `node scripts/install-native-host.mjs` 即可——layout 跟 repo 一样，
-// install 脚本能直接找到 ../native-host。
+// 内含：
+//   thunderclaw-native-host-v<v>/
+//     host-bin/
+//       linux-amd64/thunderclaw-host
+//       linux-arm64/thunderclaw-host
+//       darwin-amd64/thunderclaw-host
+//       darwin-arm64/thunderclaw-host
+//       windows-amd64/thunderclaw-host.exe
+//     scripts/install-native-host.mjs
+//     README.md
 
 import { execSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, cpSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
-const HOST_DIR = join(ROOT, 'native-host');
+const HOST_BIN_DIR = join(ROOT, 'dist', 'host-bin');
 const SCRIPTS_DIR = join(ROOT, 'scripts');
 
 const manifest = JSON.parse(readFileSync(join(ROOT, 'src', 'manifest.json'), 'utf8'));
@@ -26,29 +36,30 @@ const STAGING_PARENT = join(ROOT, 'dist', 'host-staging');
 const STAGING = join(STAGING_PARENT, PKG_NAME);
 const RELEASE_DIR = join(ROOT, 'dist', 'release');
 
-if (!existsSync(join(HOST_DIR, 'version.mjs'))) {
-  console.error('✗ native-host/version.mjs missing — run `npm run build` first.');
+if (!existsSync(HOST_BIN_DIR)) {
+  console.error('✗ dist/host-bin/ missing — run `node scripts/build-host.mjs` first.');
   process.exit(1);
 }
 
 console.log(`Building ${PKG_NAME} tarball + zip…`);
 
 rmSync(STAGING_PARENT, { recursive: true, force: true });
-mkdirSync(join(STAGING, 'native-host'), { recursive: true });
-mkdirSync(join(STAGING, 'scripts'), { recursive: true });
-mkdirSync(RELEASE_DIR, { recursive: true });
+mkdirSync(STAGING, { recursive: true });
 
-// 复制 native-host/ 全部 .mjs + manifest 模板
-for (const f of ['index.mjs', 'cli.mjs', 'protocol.mjs', 'version.mjs', 'manifest.template.json']) {
-  const src = join(HOST_DIR, f);
-  if (existsSync(src)) copyFileSync(src, join(STAGING, 'native-host', f));
-}
-copyFileSync(join(SCRIPTS_DIR, 'install-native-host.mjs'), join(STAGING, 'scripts', 'install-native-host.mjs'));
+// 复制所有 binary
+cpSync(HOST_BIN_DIR, join(STAGING, 'host-bin'), { recursive: true });
+
+// 复制 install 脚本
+mkdirSync(join(STAGING, 'scripts'), { recursive: true });
+copyFileSync(
+  join(SCRIPTS_DIR, 'install-native-host.mjs'),
+  join(STAGING, 'scripts', 'install-native-host.mjs'),
+);
 
 // README
 const readme = `# ThunderClaw Native Host v${VERSION}
 
-ThunderClaw 的 Native Messaging Host。XPI 扩展通过它跑本地 Claude Code / Codex CLI。
+ThunderClaw 的 Native Messaging Host（Go 静态二进制，**无 Node 依赖**）。
 
 ## 装
 
@@ -56,13 +67,13 @@ ThunderClaw 的 Native Messaging Host。XPI 扩展通过它跑本地 Claude Code
 node scripts/install-native-host.mjs
 \`\`\`
 
-会把 \`native-host/*.mjs\` 复制到平台对应位置，并在 Thunderbird 能找到的目录写一份 NMH manifest。
+会自动选当前平台的 binary（host-bin/<os>-<arch>/）复制到对应位置，并写 NMH manifest。
 
-- macOS: \`~/Library/Application Support/ThunderClaw/\`
-- Windows: \`%LOCALAPPDATA%\\ThunderClaw\\\` + 注册表
-- Linux: \`~/.local/share/thunderclaw/\` + \`~/.thunderbird/native-messaging-hosts/\`
+- macOS: \`~/Library/Application Support/ThunderClaw/thunderclaw-host\`
+- Windows: \`%LOCALAPPDATA%\\ThunderClaw\\thunderclaw-host.exe\` + 注册表
+- Linux: \`~/.local/share/thunderclaw/thunderclaw-host\` + \`~/.thunderbird/native-messaging-hosts/\`
 
-装完**完全退出 Thunderbird**（Mac 上是 \`Cmd+Q\`，不是关窗口）再重开。
+装完**完全退出 Thunderbird**（Mac 是 \`Cmd+Q\`，不是关窗口）再打开。
 
 ## 卸
 
@@ -72,18 +83,17 @@ node scripts/install-native-host.mjs uninstall
 
 ## 注意
 
-- 这个 tarball 只装 native host，不装 XPI 扩展。XPI 在同一个 release 的 \`thunderclaw-${VERSION}.xpi\` 资产里。
-- Linux 用户建议直接用 \`thunderclaw_${VERSION}_all.deb\`，一键带 XPI + native host + 自动启用扩展的 policies.json。
+- 这个包**只装 native host**，不装 XPI 扩展。XPI 在同一 release 的 \`thunderclaw-${VERSION}.xpi\` 资产。
+- Linux 用户建议用 \`thunderclaw_${VERSION}_all.deb\` —— 一键装 XPI + native host + 自动启用 policy。
 `;
 writeFileSync(join(STAGING, 'README.md'), readme);
 
-// 打 tar.gz
 const tarOut = join(RELEASE_DIR, `${PKG_NAME}.tar.gz`);
+mkdirSync(RELEASE_DIR, { recursive: true });
 rmSync(tarOut, { force: true });
 execSync(`tar -czf "${tarOut}" -C "${STAGING_PARENT}" "${PKG_NAME}"`);
 console.log(`  ✓ ${tarOut}`);
 
-// 打 zip（Windows 友好）
 const zipOut = join(RELEASE_DIR, `${PKG_NAME}.zip`);
 rmSync(zipOut, { force: true });
 execSync(`cd "${STAGING_PARENT}" && zip -qr "${zipOut}" "${PKG_NAME}"`);

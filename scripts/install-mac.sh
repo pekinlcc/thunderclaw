@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# ThunderClaw 一键 Mac 安装器。
+# ThunderClaw 一键 Mac 安装器（v0.3.0+：Go binary，**无 Node 依赖**）。
 #
 # 一行装：
 #   curl -fsSL https://raw.githubusercontent.com/pekinlcc/thunderclaw/main/scripts/install-mac.sh | bash
 #
-# 默认装最新 release。要锁定某个版本：
-#   curl -fsSL .../install-mac.sh | bash -s -- 0.1.20
+# 默认装最新 release。锁版：
+#   curl -fsSL .../install-mac.sh | bash -s -- 0.3.0
 #
 # 干的事：
-#   1. 装 native host 到 ~/Library/Application Support/ThunderClaw/
-#   2. 写 NMH manifest 到 ~/Library/Application Support/{Mozilla,Thunderbird}/NativeMessagingHosts/
-#   3. 把 XPI 丢进 TB 默认 profile 的 extensions/ 目录
-#   4. 写 user.js：autoDisableScopes=0 + xpinstall.signatures.required=false，让未签名扩展自动启用
-#   5. 启动 Thunderbird
+#   1. 探宿主架构（Apple Silicon vs Intel），下对应的 Go binary
+#   2. 把 binary 装到 ~/Library/Application Support/ThunderClaw/
+#   3. 写 NMH manifest 到 ~/Library/Application Support/{Mozilla,Thunderbird}/NativeMessagingHosts/
+#   4. 把 XPI 丢进 TB 默认 profile 的 extensions/ 目录
+#   5. 写 user.js：autoDisableScopes=0 + xpinstall.signatures.required=false，让未签名扩展自动启用
+#   6. 启动 Thunderbird
 #
 # 卸载：bash -s -- uninstall
 
@@ -32,7 +33,9 @@ NMH_DIRS=(
   "$HOME/Library/Application Support/Mozilla/NativeMessagingHosts"
   "$HOME/Library/Application Support/Thunderbird/NativeMessagingHosts"
 )
-WRAPPER="$HOME/.local/bin/thunderclaw-host"
+# v0.2.x 老的 ~/.local/bin/thunderclaw-host wrapper（Node-based），uninstall 时一并清掉
+LEGACY_WRAPPER="$HOME/.local/bin/thunderclaw-host"
+LEGACY_LIB_DIR="$HOME/Library/Application Support/ThunderClaw"
 
 ARG="${1:-install}"
 
@@ -128,9 +131,8 @@ install_main() {
   version="$1"
   step "Mac 一键装 ThunderClaw v$version"
 
-  # ─── prerequisites ───────────────────────────────
+  # ─── prerequisites（v0.3.0+ 不再需要 Node）─────────────
   require_cmd curl "用 \`brew install curl\` 或自带的 curl"
-  require_cmd node "Node.js v18+：https://nodejs.org/ 或 \`brew install node\`"
   require_cmd tar  "macOS 自带，理论上不会缺"
 
   if [[ ! -d "$TB_APP" ]]; then
@@ -138,19 +140,56 @@ install_main() {
     exit 1
   fi
 
+  # 探 Mac 架构选 binary
+  local arch goarch
+  arch=$(uname -m)
+  case "$arch" in
+    x86_64)  goarch="amd64" ;;
+    arm64)   goarch="arm64" ;;
+    *) err "不支持的架构：$arch"; exit 1 ;;
+  esac
+  step "Mac 架构：$arch → host binary = darwin-$goarch"
+
   # ─── tmp work dir ────────────────────────────────
   local tmp
   tmp=$(mktemp -d -t thunderclaw)
   trap "rm -rf '$tmp'" EXIT
 
-  # ─── 1) native host tarball ──────────────────────
-  step "下载并安装 native host"
+  # ─── 1) 下 native host tarball + 装对应平台的 binary ─────
+  step "下载并安装 native host（Go 二进制，无 Node 依赖）"
   local host_url
   host_url="https://github.com/$REPO/releases/download/v$version/thunderclaw-native-host-v$version.tar.gz"
   curl -fSL --progress-bar -o "$tmp/host.tar.gz" "$host_url" \
     || { err "下载 host tarball 失败：$host_url"; exit 1; }
   tar -xzf "$tmp/host.tar.gz" -C "$tmp"
-  ( cd "$tmp/thunderclaw-native-host-v$version" && node scripts/install-native-host.mjs )
+
+  local lib_dir="$HOME/Library/Application Support/ThunderClaw"
+  mkdir -p "$lib_dir"
+  local host_bin_src="$tmp/thunderclaw-native-host-v$version/host-bin/darwin-$goarch/thunderclaw-host"
+  if [[ ! -f "$host_bin_src" ]]; then
+    err "tarball 里找不到 darwin-$goarch 的 binary：$host_bin_src"
+    exit 1
+  fi
+  cp "$host_bin_src" "$lib_dir/thunderclaw-host"
+  chmod +x "$lib_dir/thunderclaw-host"
+  ok "native host → $lib_dir/thunderclaw-host"
+
+  # 写 NMH manifest 到 Mac 的 TB 标准位置
+  local manifest_json
+  manifest_json='{
+  "name": "thunderclaw",
+  "description": "ThunderClaw native messaging host",
+  "path": "'"$lib_dir/thunderclaw-host"'",
+  "type": "stdio",
+  "allowed_extensions": ["thunderclaw@pekinlcc.dev"]
+}'
+  for d in \
+    "$HOME/Library/Application Support/Thunderbird/NativeMessagingHosts" \
+    "$HOME/Library/Mozilla/NativeMessagingHosts"; do
+    mkdir -p "$d"
+    printf '%s' "$manifest_json" > "$d/thunderclaw.json"
+    ok "NMH manifest → $d/thunderclaw.json"
+  done
 
   # ─── 2) XPI ───────────────────────────────────────
   step "下载 XPI"
@@ -213,8 +252,8 @@ install_main() {
 
 uninstall_main() {
   step "卸载 ThunderClaw"
-  rm -rf "$LIB_DIR"
-  rm -f "$WRAPPER"
+  rm -rf "$LEGACY_LIB_DIR"
+  rm -f "$LEGACY_WRAPPER"
   local d
   for d in "${NMH_DIRS[@]}"; do
     rm -f "$d/thunderclaw.json"

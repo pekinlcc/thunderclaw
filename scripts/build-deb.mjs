@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const PKG_DIR = join(ROOT, 'packaging', 'deb');
-const HOST_DIR = join(ROOT, 'native-host');
+// .deb 是 Linux x86_64 包，用对应 Go binary
+const HOST_BIN = join(ROOT, 'dist', 'host-bin', 'linux-amd64', 'thunderclaw-host');
 const XPI = join(ROOT, 'dist', 'thunderclaw.xpi');
 
 const manifest = JSON.parse(readFileSync(join(ROOT, 'src', 'manifest.json'), 'utf8'));
@@ -23,6 +24,11 @@ if (!existsSync(XPI)) {
   console.error('✗ XPI not found, run `npm run build` first:', XPI);
   process.exit(1);
 }
+if (!existsSync(HOST_BIN)) {
+  console.error('✗ host binary not found:', HOST_BIN);
+  console.error('  先跑：node scripts/build-host.mjs');
+  process.exit(1);
+}
 
 console.log(`Building thunderclaw_${VERSION}_all.deb …`);
 
@@ -31,14 +37,10 @@ rmSync(STAGING, { recursive: true, force: true });
 mkdirSync(STAGING, { recursive: true });
 
 // ─── 文件树 ──────────────────────────────────────
-// /usr/lib/thunderclaw/  (native host)
+// /usr/lib/thunderclaw/thunderclaw-host  (Go binary，单文件，无 Node 依赖)
 mkdirSync(join(STAGING, 'usr/lib/thunderclaw'), { recursive: true });
-for (const f of ['index.mjs', 'cli.mjs', 'protocol.mjs', 'version.mjs']) {
-  copyFileSync(join(HOST_DIR, f), join(STAGING, 'usr/lib/thunderclaw', f));
-}
-// host wrapper
-copyFileSync(join(PKG_DIR, 'host-wrapper.sh'), join(STAGING, 'usr/lib/thunderclaw/host'));
-chmodSync(join(STAGING, 'usr/lib/thunderclaw/host'), 0o755);
+copyFileSync(HOST_BIN, join(STAGING, 'usr/lib/thunderclaw/thunderclaw-host'));
+chmodSync(join(STAGING, 'usr/lib/thunderclaw/thunderclaw-host'), 0o755);
 
 // /usr/lib/mozilla/native-messaging-hosts/thunderclaw.json
 mkdirSync(join(STAGING, 'usr/lib/mozilla/native-messaging-hosts'), { recursive: true });
@@ -48,7 +50,7 @@ writeFileSync(
     {
       name: 'thunderclaw',
       description: 'ThunderClaw native messaging host',
-      path: '/usr/lib/thunderclaw/host',
+      path: '/usr/lib/thunderclaw/thunderclaw-host',
       type: 'stdio',
       allowed_extensions: ['thunderclaw@pekinlcc.dev'],
     },
@@ -83,7 +85,7 @@ chmodSync(join(STAGING, 'DEBIAN/postrm'), 0o755);
 // ─── 跑 dpkg-deb --build；macOS 没 dpkg-deb 时按 .deb ar 格式手工打包 ──────────
 const outDir = join(ROOT, 'dist', 'release');
 mkdirSync(outDir, { recursive: true });
-const outFile = join(outDir, `thunderclaw_${VERSION}_all.deb`);
+const outFile = join(outDir, `thunderclaw_${VERSION}_amd64.deb`);
 rmSync(outFile, { force: true });
 
 function hasCommand(cmd) {
@@ -120,4 +122,4 @@ if (hasCommand('dpkg-deb')) {
 console.log(`\n✓ ${outFile}`);
 console.log('\n试装：');
 console.log(`  sudo dpkg -i ${outFile}`);
-console.log('  sudo apt-get install -f         # 修任何缺失依赖（如 nodejs）\n');
+console.log('  （v0.3.0+ 不需要 Node.js，host 是 Go 静态 binary）\n');

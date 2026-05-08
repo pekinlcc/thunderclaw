@@ -62,12 +62,36 @@ Next steps:
      in a self-introduction. The pipeline starts automatically.
 
 Files installed:
-  /usr/lib/thunderclaw/                      native host runtime
-  /usr/lib/mozilla/native-messaging-hosts/   NMH manifest
-  /opt/thunderclaw/thunderclaw.xpi           extension
-  /etc/thunderbird/policies.json             auto-install rule
+  /usr/lib/thunderclaw/thunderclaw-host       native host binary (Go, no Node needed)
+  /usr/lib/mozilla/native-messaging-hosts/    NMH manifest
+  /opt/thunderclaw/thunderclaw.xpi            extension
+  /etc/thunderbird/policies.json              auto-install rule
 
 Uninstall: sudo apt remove thunderclaw
 
 EOF
+
+# 关键：snap thunderbird 用户得提前知道 native messaging 在 Ubuntu 24.04 走不通。
+# `which thunderbird` 落到 /snap/，弹明显警告。
+TB_PATH="$(command -v thunderbird 2>/dev/null || true)"
+if [ -n "$TB_PATH" ]; then
+  REAL_TB="$(readlink -f "$TB_PATH" 2>/dev/null || echo "$TB_PATH")"
+  case "$REAL_TB" in
+    /snap/*|/var/snap/*)
+      cat >&2 <<'WARN'
+⚠️  你的 Thunderbird 是 snap 版（系统级问题，ThunderClaw 不能用）
+
+  Ubuntu 24.04 的 xdg-desktop-portal 没暴露 WebExtensions backend，
+  snap Thunderbird 无法 spawn 我们的 native host —— 扩展会显示，
+  但点任何按钮都会失败。
+
+  推荐换 Mozilla 官方 tarball 版（10 分钟，邮件账户保留）。一行命令：
+
+    bash <(curl -fsSL https://raw.githubusercontent.com/pekinlcc/thunderclaw/main/scripts/migrate-snap-tb.sh)
+
+WARN
+      ;;
+  esac
+fi
+
 exit 0

@@ -349,6 +349,16 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - 加 `host-info` RPC + `PROTOCOL_VERSION` 元数据，扩展启动时握手，host 过旧 / 不一致就在 UI 顶端弹红/黄条 + 一键复制重装命令
   - 释出 `thunderclaw-native-host-v<v>.tar.gz` / `.zip`，Mac/Win 用户不用 git clone 整个仓库；Linux 仍优先 `.deb`
   - 堵掉"XPI 升了 host 没升 → 全部 `unknown method: llm-call` → 用户看到'今日无重要事项'但毫无提示"那个隐蔽坑
+- [x] **Native host 重写为 Go 单二进制 + 全平台一键安装器**（v0.3.0）：
+  - native-host/*.mjs（Node）→ host/*.go（Go），交叉编译 5 个 target（linux/darwin × amd64/arm64 + windows-amd64），每个 ~2MB 静态二进制。**用户机器不再需要 Node.js**。
+  - 版本号通过 `-ldflags "-X main.Version=…"` 在 build 时烧进 binary，host-info RPC 返回的版本永远跟扩展端 manifest 对齐
+  - `.deb` 改成 amd64-specific（之前是 arch=all），`Depends: nodejs` 删掉，体积从 220KB 涨到 1MB（带 Go binary）
+  - 全平台一键 installer：
+    - Linux: `scripts/install-linux.sh`（apt 系优先 .deb，arm64 / 其它发行版退到 tarball；自动检测 snap thunderbird 弹警告）
+    - Mac: `scripts/install-mac.sh`（已有，去掉 Node 依赖）
+    - Win: `scripts/install-windows.ps1`（PowerShell，下 zip → 装 binary → 写注册表 NMH manifest → user.js 自动启用 → 启动 TB）
+  - `.deb` postinst 检测 snap thunderbird → 弹横条警告 + 指向 `migrate-snap-tb.sh` 一键迁移脚本
+  - `npm run sign` 命令（`scripts/sign.mjs`）—— Mozilla AMO 自分发签名脚手架，等用户提供 `AMO_JWT_ISSUER` + `AMO_JWT_SECRET` 就能跑。签名后的 XPI 解锁 `experiment_apis`，日历直写无对话框
 - [x] **解掉 v0.2.0 的 mozillaAddons 坑**（v0.2.1，紧急 hotfix）：v0.1.23 在 manifest 里加的 `experiment_apis` + `mozillaAddons` 权限要求 XPI 已签名，未签名 XPI 在 TB ESR/release 上**整个加载不上**——v0.2.0 装上去用户连扩展图标都看不到。v0.2.1 把这两块从 manifest.json 拿掉，build 时跳过 `experiments/` 目录的打包（代码留着，等 AMO 签名后再开）；`packaging/deb/control.template` 的 `Recommends: thunderbird` 改 `Suggests`，避免 .deb 安装时 apt 自动把 snap thunderbird 拽回来。
 - [x] **新邮件触发增量重算 + 简报顶端总览条**（v0.2.0）：
   - 新邮件到达 → background 监听 `messages.onNewMailReceived` → 把发件人塞 debounce 队列（30 秒）→ 到期后只对受影响联系人重 Pulse + 全量重 Briefing（产出新顺序 + 新 overview）
