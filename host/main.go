@@ -85,6 +85,16 @@ func handle(req rpcRequest) (any, error) {
 		}
 		return openCalendarICS(p)
 
+	case "direct-calendar-create":
+		// 直接 INSERT 到 TB 的本地日历 SQLite，不走导入对话框。
+		// AMO unlisted 签名禁用 experiment_apis，SQLite 直写是当前唯一
+		// 能做到"加日历无对话框"的路径。
+		var p directCalendarParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, fmt.Errorf("invalid direct-calendar-create params: %w", err)
+		}
+		return directCalendarCreate(p)
+
 	default:
 		return nil, fmt.Errorf("unknown method: %s", req.Method)
 	}

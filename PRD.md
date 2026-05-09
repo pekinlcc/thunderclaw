@@ -349,6 +349,11 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - 加 `host-info` RPC + `PROTOCOL_VERSION` 元数据，扩展启动时握手，host 过旧 / 不一致就在 UI 顶端弹红/黄条 + 一键复制重装命令
   - 释出 `thunderclaw-native-host-v<v>.tar.gz` / `.zip`，Mac/Win 用户不用 git clone 整个仓库；Linux 仍优先 `.deb`
   - 堵掉"XPI 升了 host 没升 → 全部 `unknown method: llm-call` → 用户看到'今日无重要事项'但毫无提示"那个隐蔽坑
+- [x] **日历直写 Thunderbird 本地日历 SQLite，零对话框**（v0.4.0）：
+  - AMO unlisted 签名禁用 `experiment_apis`，所以不能从扩展进程内调 `cal.manager.adoptItem`。改让 native host 直接 INSERT 到 `<profile>/calendar-data/local.sqlite`：解析 prefs.js 找 `type="storage"` 的本地日历 UUID，往 `cal_events` / `cal_todos` + `cal_properties` 写行；WAL 模式 + busy_timeout=5s，能跟运行中的 TB 并发写
+  - PROTOCOL_VERSION 5 = 加 `direct-calendar-create` RPC；calendar.ts 把这个放第一层，老 host / 没本地日历时回退到 v0.1.20 的 NMH 导入对话框路径
+  - host binary 体积涨到 ~6.7MB（带 modernc.org/sqlite，纯 Go 无 CGO，方便跨平台 build）
+  - 已知限制：TB 内存里 calendar manager 不会立刻 reload，用户切到日历 tab 或重启才看见新事件——签名 + experiment_apis 才能拿到 in-process refresh，那条路 Mozilla 给的 unlisted 签名不允许
 - [x] **Native host 重写为 Go 单二进制 + 全平台一键安装器**（v0.3.0）：
   - native-host/*.mjs（Node）→ host/*.go（Go），交叉编译 5 个 target（linux/darwin × amd64/arm64 + windows-amd64），每个 ~2MB 静态二进制。**用户机器不再需要 Node.js**。
   - 版本号通过 `-ldflags "-X main.Version=…"` 在 build 时烧进 binary，host-info RPC 返回的版本永远跟扩展端 manifest 对齐

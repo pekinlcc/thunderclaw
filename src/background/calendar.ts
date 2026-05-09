@@ -1,11 +1,13 @@
 // Calendar / Task 创建。
 // 四层路径，从最直接到兜底：
-//   1) thunderclawCalendar.*    —— 本扩展的 Experiment API，直接 adoptItem 到 TB 日历/任务；
-//                                 普通 MailExtension 没有官方 calendar create API
-//   2) messenger.calendar.*     —— 外部 calendar experiment / 未来 TB API；用 iCalendar raw item
-//   3) NMH open-calendar-ics    —— native host 写 tmp.ics + 显式 spawn TB 打开它，
-//                                 TB 自己弹原生导入对话框，用户点一下"导入"就完事
-//   4) browser.downloads        —— 最后兜底，文件落 ~/Downloads/，提示用户手动双击
+//   1) NMH direct-calendar-create —— native host 直接 INSERT 到 TB 本地日历的
+//                                   <profile>/calendar-data/local.sqlite，**无任何对话框**
+//                                   （v0.4.0+，PROTOCOL_VERSION>=5）
+//   2) thunderclawCalendar.*      —— 本扩展的 Experiment API；AMO unlisted 不放行，
+//                                   只在 self-built unsigned dev XPI 上能用
+//   3) NMH open-calendar-ics      —— native host 写 tmp.ics + 显式 spawn TB 打开它，
+//                                   TB 弹原生"导入事件"对话框，用户点一次"导入"
+//   4) browser.downloads          —— 最后兜底，文件落 ~/Downloads/，提示用户手动双击
 
 import type {
   CreateActionResult,
@@ -181,9 +183,30 @@ export function buildICS(event: ExtractedEvent): string {
 export async function createCalendarEvent(
   event: ExtractedEvent,
 ): Promise<CreateActionResult> {
+  // 1) NMH direct-calendar-create —— SQLite 直写，**无对话框**（v0.4.0+）
+  try {
+    const r = await nativeHost.directCalendarCreate({
+      type: 'event',
+      title: event.title || '(无标题)',
+      startISO: event.startISO ?? undefined,
+      endISO: event.endISO ?? undefined,
+      allDay: event.allDay,
+      location: event.location ?? undefined,
+      description: event.description ?? undefined,
+    });
+    return {
+      ok: true,
+      via: 'native-api',
+      detail: `已直接添加到日历"${r.calendarName}"，下次切到日历 tab 就能看到`,
+    };
+  } catch (err) {
+    console.warn('[ThunderClaw][calendar] direct-calendar-create failed, falling back:', err);
+    // 老 host（pre-v0.4.0）/ 未找到本地日历 → 进下面的 fallback 链
+  }
+
   const ics = buildICS(event);
 
-  // 1) Direct Experiment API：不打开 .ics 导入向导
+  // 2) Direct Experiment API：仅在 self-built dev XPI 上有效
   try {
     const direct = await createViaThunderclawCalendarAPI(ics, 'event');
     if (direct) return direct;
@@ -191,7 +214,7 @@ export async function createCalendarEvent(
     console.warn('[ThunderClaw] thunderclawCalendar.createFromICS(event) failed:', err);
   }
 
-  // 2) Calendar experiment / future native API
+  // 3) Calendar experiment / future native API
   try {
     const direct = await createViaDraftCalendarAPI(ics, 'event');
     if (direct) return direct;
@@ -199,7 +222,7 @@ export async function createCalendarEvent(
     console.warn('[ThunderClaw] calendar.items.create(event) failed:', err);
   }
 
-  // 3) NMH 路径：让 native host spawn TB 打开 .ics，TB 内部弹原生导入对话框
+  // 4) NMH 路径：让 native host spawn TB 打开 .ics，TB 内部弹原生导入对话框
   try {
     await nativeHost.openCalendarICS(ics);
     return {
@@ -209,7 +232,7 @@ export async function createCalendarEvent(
     };
   } catch (err) {
     console.warn('[ThunderClaw][calendar] NMH open-calendar-ics failed:', err);
-    // 老 host（pre-v0.1.20，没这个方法）→ 落到 downloads 兜底
+    // 老 host → 落到 downloads 兜底
   }
 
   // 4) Downloads 兜底：文件落进 ~/Downloads/ThunderClaw/ + 试着 downloads.open
@@ -235,6 +258,23 @@ export async function createCalendarEvent(
 }
 
 export async function createTask(task: ExtractedTask): Promise<CreateActionResult> {
+  // 1) NMH direct-calendar-create —— SQLite 直写，**无对话框**
+  try {
+    const r = await nativeHost.directCalendarCreate({
+      type: 'task',
+      title: task.title || '(无标题)',
+      dueISO: task.dueISO ?? undefined,
+      description: task.notes ?? undefined,
+    });
+    return {
+      ok: true,
+      via: 'native-api',
+      detail: `已直接添加到任务"${r.calendarName}"，下次切到日历 tab 就能看到`,
+    };
+  } catch (err) {
+    console.warn('[ThunderClaw][calendar] direct-calendar-create (task) failed, falling back:', err);
+  }
+
   const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@thunderclaw`;
   const due = task.dueISO ? fmtICSDate(task.dueISO, false) : '';
   const lines = [
@@ -251,7 +291,7 @@ export async function createTask(task: ExtractedTask): Promise<CreateActionResul
   lines.push('END:VTODO', 'END:VCALENDAR');
   const ics = lines.join('\r\n');
 
-  // 1) Direct Experiment API：不打开 .ics 导入向导
+  // 2) Direct Experiment API：仅 self-built dev XPI
   try {
     const direct = await createViaThunderclawCalendarAPI(ics, 'task');
     if (direct) return direct;

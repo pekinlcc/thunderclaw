@@ -9,6 +9,8 @@ import type {
   ClaudeCallResult,
   HostInfo,
   OpenCalendarICSResult,
+  DirectCalendarParams,
+  DirectCalendarResult,
 } from '../shared/protocol';
 import { getState } from './store';
 
@@ -84,6 +86,16 @@ class NativeHost {
   // 不会被系统默认 .ics handler（Mac 上是 Apple Calendar）拦截。
   openCalendarICS(ics: string) {
     return this.call<OpenCalendarICSResult>({ method: 'open-calendar-ics', params: { ics } });
+  }
+
+  // 直写 TB 本地日历 SQLite —— 完全跳过导入对话框。
+  // 老 host（pre-v0.4.0，PROTOCOL_VERSION<5）不认这个方法，会回 unknown method，
+  // 调用方 catch 后回退到 openCalendarICS。
+  directCalendarCreate(params: DirectCalendarParams) {
+    return this.call<DirectCalendarResult>({
+      method: 'direct-calendar-create',
+      params,
+    });
   }
 
   // 根据用户在 UI 里选的 CLI 引擎路由到对应后端。

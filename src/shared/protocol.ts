@@ -33,22 +33,43 @@ export type HostInfo = {
 };
 
 // 扩展期望的 NMH 协议版本——比这个低就提示用户重装 native host。
-// 跟 native-host/version.mjs 里的 PROTOCOL_VERSION 严格对齐。
 //   1 = pre-v0.1.15（只有 claude-call）
 //   2 = v0.1.15（加 llm-call、去 claude-call）
 //   3 = v0.1.18（加 host-info）
-//   4 = v0.1.20（加 open-calendar-ics —— 一键导入到 TB 日历）
-export const EXPECTED_PROTOCOL_VERSION = 4;
+//   4 = v0.1.20（加 open-calendar-ics —— TB 弹原生导入对话框）
+//   5 = v0.4.0（加 direct-calendar-create —— SQLite 直写，无对话框）
+export const EXPECTED_PROTOCOL_VERSION = 5;
 
 export type OpenCalendarICSParams = { ics: string };
 export type OpenCalendarICSResult = { ok: boolean };
+
+// 直写 TB 本地日历 SQLite，**不弹导入对话框**。
+// AMO unlisted 签名不允许 experiment_apis，所以 v0.4.0 改走 native host 直接 INSERT
+// 到 <profile>/calendar-data/local.sqlite。
+export type DirectCalendarParams = {
+  type: 'event' | 'task';
+  title: string;
+  startISO?: string;
+  endISO?: string;
+  dueISO?: string;
+  allDay?: boolean;
+  location?: string;
+  description?: string;
+};
+export type DirectCalendarResult = {
+  ok: boolean;
+  calendarId: string;
+  calendarName: string;
+  itemId: string;
+};
 
 export type NativeRequest =
   | { id: string; method: 'ping'; params: Record<string, never> }
   | { id: string; method: 'host-info'; params: Record<string, never> }
   | { id: string; method: 'probe-cli'; params: Record<string, never> }
   | { id: string; method: 'llm-call'; params: LLMCallParams }
-  | { id: string; method: 'open-calendar-ics'; params: OpenCalendarICSParams };
+  | { id: string; method: 'open-calendar-ics'; params: OpenCalendarICSParams }
+  | { id: string; method: 'direct-calendar-create'; params: DirectCalendarParams };
 
 export type NativeResponse<T = unknown> =
   | { id: string; result: T }
