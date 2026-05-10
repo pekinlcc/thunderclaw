@@ -349,6 +349,7 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - 加 `host-info` RPC + `PROTOCOL_VERSION` 元数据，扩展启动时握手，host 过旧 / 不一致就在 UI 顶端弹红/黄条 + 一键复制重装命令
   - 释出 `thunderclaw-native-host-v<v>.tar.gz` / `.zip`，Mac/Win 用户不用 git clone 整个仓库；Linux 仍优先 `.deb`
   - 堵掉"XPI 升了 host 没升 → 全部 `unknown method: llm-call` → 用户看到'今日无重要事项'但毫无提示"那个隐蔽坑
+- [x] **邮件预览 fallback 顺序修复**（v0.4.1）：事项关联多封邮件时，"发生了什么"优先尝试最近收到邮件，其次 reply target，再兜底全部 emailIds；某一封不可读不会让整个预览失败，"在 Thunderbird 中打开"也打开实际预览成功的那封。
 - [x] **日历直写 Thunderbird 本地日历 SQLite，零对话框**（v0.4.0）：
   - AMO unlisted 签名禁用 `experiment_apis`，所以不能从扩展进程内调 `cal.manager.adoptItem`。改让 native host 直接 INSERT 到 `<profile>/calendar-data/local.sqlite`：解析 prefs.js 找 `type="storage"` 的本地日历 UUID，往 `cal_events` / `cal_todos` + `cal_properties` 写行；WAL 模式 + busy_timeout=5s，能跟运行中的 TB 并发写
   - PROTOCOL_VERSION 5 = 加 `direct-calendar-create` RPC；calendar.ts 把这个放第一层，老 host / 没本地日历时回退到 v0.1.20 的 NMH 导入对话框路径
