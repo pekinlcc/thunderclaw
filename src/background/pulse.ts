@@ -325,6 +325,7 @@ export async function runPulse(
         Date.parse(b2.date) - Date.parse(a.date);
       const incoming = matched.filter((m) => !m.isUserSent).sort(byDateDesc);
       const outgoing = matched.filter((m) => m.isUserSent).sort(byDateDesc);
+      const orderedEmailIds = [...incoming, ...outgoing].map((m) => m.id);
       const replyTargetMsg = incoming[0] ?? outgoing[0] ?? null;
       const replyTargetIsUserSent = !incoming[0] && !!outgoing[0];
       const incomingEmailIds = incoming.map((m) => m.id);
@@ -346,7 +347,7 @@ export async function runPulse(
         deadline: item.deadline ?? null,
         suggestedActions,
         reason: item.reason ?? '',
-        emailIds: matched.map((m) => m.id),
+        emailIds: orderedEmailIds,
         incomingEmailIds,
         replyToMessageId: replyTargetMsg?.id ?? null,
         replyTargetIsUserSent,

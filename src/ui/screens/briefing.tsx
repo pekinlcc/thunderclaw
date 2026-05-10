@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { tbStyles } from '../styles';
 import { SparkleIcon } from '../icons';
 import type {
@@ -678,8 +678,22 @@ function WhatHappenedSection({ item }: { item: BriefingItem }) {
     setError(null);
   }, [item.id]);
 
-  const messageId = item.emailIds[0];
-  const canExpand = typeof messageId === 'number';
+  const previewMessageIds = useMemo(() => {
+    const raw = [
+      ...(item.incomingEmailIds ?? []),
+      item.replyToMessageId,
+      ...(item.emailIds ?? []),
+    ];
+    const seen = new Set<number>();
+    const ids: number[] = [];
+    for (const id of raw) {
+      if (typeof id !== 'number' || !Number.isFinite(id) || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+    }
+    return ids;
+  }, [item.emailIds, item.incomingEmailIds, item.replyToMessageId]);
+  const canExpand = previewMessageIds.length > 0;
 
   async function toggle() {
     if (!canExpand) return;
@@ -692,9 +706,17 @@ function WhatHappenedSection({ item }: { item: BriefingItem }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await ui.getEmailPreview(messageId!);
-      if (res.ok && res.preview) setPreview(res.preview);
-      else setError(res.error || '加载失败');
+      const errors: string[] = [];
+      for (const id of previewMessageIds) {
+        const res = await ui.getEmailPreview(id);
+        if (res.ok && res.preview) {
+          setPreview(res.preview);
+          return;
+        }
+        if (res.error) errors.push(res.error);
+      }
+      const uniqueErrors = [...new Set(errors)];
+      setError(uniqueErrors.length > 0 ? uniqueErrors.join('；') : '没有可读取的原邮件');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -704,7 +726,9 @@ function WhatHappenedSection({ item }: { item: BriefingItem }) {
 
   async function openOriginal() {
     if (!canExpand) return;
-    const res = await ui.openOriginal(messageId!);
+    const id = preview?.messageId ?? previewMessageIds[0];
+    if (typeof id !== 'number') return;
+    const res = await ui.openOriginal(id);
     if (!res.ok) console.warn('openOriginal:', res.error);
   }
 
@@ -835,7 +859,7 @@ function WhatHappenedSection({ item }: { item: BriefingItem }) {
                     borderTop: `1px dashed ${tbStyles.borderSoft}`,
                   }}
                 >
-                  此事项关联 {item.emailIds.length} 封邮件，这里只显示最近一封。点 "在 Thunderbird 中打开" 查看全部。
+                  此事项关联 {item.emailIds.length} 封邮件，这里优先显示最近一封收到邮件。点 "在 Thunderbird 中打开" 查看原邮件。
                 </div>
               )}
             </>
