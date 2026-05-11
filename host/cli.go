@@ -19,16 +19,67 @@ import (
 // fallbackPaths 的语义：snap thunderbird spawn 子进程时给的 PATH 很贫瘠，
 // 这里手动兜常见的用户级 / 系统 bin 目录，防止 `which claude` / `which codex` 找不着
 func fallbackPaths(name string) []string {
-	home, _ := os.UserHomeDir()
-	return []string{
-		filepath.Join(home, ".local", "bin", name),
-		filepath.Join(home, ".npm-global", "bin", name),
-		filepath.Join(home, ".bun", "bin", name),
-		filepath.Join(home, ".cargo", "bin", name),
-		"/usr/local/bin/" + name,
-		"/opt/homebrew/bin/" + name,
-		"/usr/bin/" + name,
+	var paths []string
+	for _, dir := range fallbackPathDirs() {
+		paths = append(paths, filepath.Join(dir, name))
 	}
+	return paths
+}
+
+func fallbackPathDirs() []string {
+	home, _ := os.UserHomeDir()
+	dirs := []string{
+		filepath.Join(home, ".local", "bin"),
+		filepath.Join(home, ".npm-global", "bin"),
+		filepath.Join(home, ".bun", "bin"),
+		filepath.Join(home, ".cargo", "bin"),
+		"/opt/homebrew/bin",
+		"/opt/homebrew/sbin",
+		"/usr/local/bin",
+		"/usr/bin",
+		"/bin",
+		"/usr/sbin",
+		"/sbin",
+	}
+	if nvmBins, err := filepath.Glob(filepath.Join(home, ".nvm", "versions", "node", "*", "bin")); err == nil {
+		dirs = append(nvmBins, dirs...)
+	}
+	return dirs
+}
+
+func cliPath(extraDirs ...string) string {
+	seen := map[string]bool{}
+	var dirs []string
+	add := func(dir string) {
+		if dir == "" || seen[dir] {
+			return
+		}
+		seen[dir] = true
+		dirs = append(dirs, dir)
+	}
+	for _, dir := range extraDirs {
+		add(dir)
+	}
+	for _, dir := range fallbackPathDirs() {
+		add(dir)
+	}
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		add(dir)
+	}
+	return strings.Join(dirs, string(os.PathListSeparator))
+}
+
+func cliEnv(extra ...string) []string {
+	env := make([]string, 0, len(os.Environ())+len(extra)+1)
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "PATH=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, "PATH="+cliPath())
+	env = append(env, extra...)
+	return env
 }
 
 // which 优先 PATH 查找，没有的话扫常见位置
@@ -49,7 +100,9 @@ func which(name string) string {
 func tryVersion(bin string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "--version").Output()
+	cmd := exec.CommandContext(ctx, bin, "--version")
+	cmd.Env = cliEnv(filepath.Dir(bin))
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
@@ -174,7 +227,7 @@ func callClaude(prompt, systemPrompt string, timeoutMs int) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Env = os.Environ()
+	cmd.Env = cliEnv(filepath.Dir(bin))
 	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -216,7 +269,7 @@ func callCodex(prompt, systemPrompt string, timeoutMs int) (string, error) {
 	args := []string{"exec", "--skip-git-repo-check", "--color", "never", "-o", outFile}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = workDir
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	cmd.Env = cliEnv(filepath.Dir(bin), "NO_COLOR=1")
 	cmd.Stdin = strings.NewReader(fullPrompt)
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf // 不打印进 stdin，但限长以防爆内存
