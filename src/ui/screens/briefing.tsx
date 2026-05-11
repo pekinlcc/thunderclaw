@@ -64,6 +64,30 @@ function sortStepsForExecution(steps: ActionStep[]): ActionStep[] {
   return [...steps].sort((a, b) => order[a.kind] - order[b.kind]);
 }
 
+const STEP_PROGRESS_MESSAGES: Record<ActionStepKind, string[]> = {
+  calendar: [
+    '正在读取邮件上下文…',
+    '正在请 AI 提取日程字段…',
+    '正在等待结构化日程结果…',
+  ],
+  task: [
+    '正在读取邮件上下文…',
+    '正在请 AI 提取待办字段…',
+    '正在等待结构化任务结果…',
+  ],
+  reply: [
+    '正在读取邮件 thread 和你的自我介绍…',
+    '正在请 AI 生成回复草稿…',
+    '正在等待草稿返回…',
+  ],
+  acknowledge: ['正在标记已读并归档…'],
+};
+
+function withElapsed(message: string, startedAt: number): string {
+  const seconds = Math.floor((Date.now() - startedAt) / 1000);
+  return seconds >= 3 ? `${message} · ${seconds}s` : message;
+}
+
 // 每一步的执行结果（用于内联进度展示）
 // 'deferred' 表示这步被推迟到 reply 之后再跑（典型："我不参加 = reply + ack"，
 // ack 不能在 reply 之前就跑，否则卡片会被过滤掉、回复正文用户都看不到）
@@ -289,6 +313,9 @@ function ProgressPanel({
   onRegenerate: () => void;
   busy: boolean;
 }) {
+  const active = results.find((r) => r.state === 'running') ?? null;
+  const activeStyle = active ? KIND_STYLES[active.kind] : null;
+
   return (
     <div
       style={{
@@ -299,6 +326,39 @@ function ProgressPanel({
         overflow: 'hidden',
       }}
     >
+      {active && activeStyle && (
+        <div
+          style={{
+            padding: '8px 14px',
+            borderBottom: `1px solid ${tbStyles.borderSoft}`,
+            background: tbStyles.blueLight,
+            color: '#0A4D8F',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 11.5,
+            lineHeight: 1.5,
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              background: tbStyles.blue,
+              animation: 'tbactionpulse 1.2s ease-in-out infinite',
+              flexShrink: 0,
+            }}
+          />
+          <span style={{ fontWeight: 600, flexShrink: 0 }}>
+            {activeStyle.icon} {activeStyle.label}
+          </span>
+          <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+            {active.message || '执行中…'}
+          </span>
+          <style>{`@keyframes tbactionpulse { 0%,100%{opacity:1} 50%{opacity:.35} }`}</style>
+        </div>
+      )}
       <div style={{ padding: '10px 14px' }}>
         {results.map((r, i) => {
           const s = KIND_STYLES[r.kind];
@@ -326,10 +386,10 @@ function ProgressPanel({
             >
               <span style={{ color, width: 14, textAlign: 'center' }}>{icon}</span>
               <span style={{ fontSize: 11 }}>{s.icon}</span>
-              <span style={{ flex: 1 }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ color: s.color, fontWeight: 500 }}>{s.label}</span>
                 {r.message && (
-                  <span style={{ color: tbStyles.textMuted, marginLeft: 6 }}>
+                  <span style={{ color: tbStyles.textMuted, marginLeft: 6, overflowWrap: 'anywhere' }}>
                     {r.message}
                   </span>
                 )}
@@ -1232,13 +1292,48 @@ export function BriefingScreen({
       setRunState((rs) => (rs ? { ...rs, results: [...progress] } : rs));
     }
 
+    async function runWithProgress<T>(
+      i: number,
+      messages: string[],
+      task: () => Promise<T>,
+    ): Promise<T> {
+      const startedAt = Date.now();
+      let msgIdx = 0;
+      const push = () => {
+        const message = messages[Math.min(msgIdx, messages.length - 1)] || '执行中…';
+        update(i, { state: 'running', message: withElapsed(message, startedAt) });
+      };
+      push();
+      const timer = window.setInterval(() => {
+        msgIdx = Math.min(msgIdx + 1, messages.length - 1);
+        push();
+      }, 5000);
+      try {
+        return await task();
+      } finally {
+        window.clearInterval(timer);
+      }
+    }
+
     try {
       for (let i = 0; i < orderedSteps.length; i++) {
         const step = orderedSteps[i]!;
-        update(i, { state: 'running' });
         try {
           if (step.kind === 'calendar') {
-            const res = await ui.createCalendarEvent(item.id, step.detail);
+            const extracted = await runWithProgress(i, STEP_PROGRESS_MESSAGES.calendar, () =>
+              ui.extractCalendarEvent(item.id, step.detail),
+            );
+            if (!extracted.ok || !extracted.event) {
+              const msg = extracted.error || '无法解析出事件信息';
+              update(i, { state: 'error', message: msg });
+              showToast('error', `日历创建失败：${msg}`);
+              continue;
+            }
+            const res = await runWithProgress(
+              i,
+              ['已提取日程字段，正在写入 Thunderbird 日历…', '正在确认日历写入结果…'],
+              () => ui.commitCalendarEvent(extracted.event!),
+            );
             if (res.ok && res.result) {
               update(i, { state: 'done', message: res.result.detail });
               showToast('success', `${KIND_STYLES.calendar.icon} ${res.result.detail}`);
@@ -1248,7 +1343,20 @@ export function BriefingScreen({
               showToast('error', `日历创建失败：${msg}`);
             }
           } else if (step.kind === 'task') {
-            const res = await ui.createTask(item.id, step.detail);
+            const extracted = await runWithProgress(i, STEP_PROGRESS_MESSAGES.task, () =>
+              ui.extractTask(item.id, step.detail),
+            );
+            if (!extracted.ok || !extracted.task) {
+              const msg = extracted.error || '无法解析出任务信息';
+              update(i, { state: 'error', message: msg });
+              showToast('error', `任务创建失败：${msg}`);
+              continue;
+            }
+            const res = await runWithProgress(
+              i,
+              ['已提取待办字段，正在写入 Thunderbird 任务…', '正在确认任务写入结果…'],
+              () => ui.commitTask(extracted.task!),
+            );
             if (res.ok && res.result) {
               update(i, { state: 'done', message: res.result.detail });
               showToast('success', `${KIND_STYLES.task.icon} ${res.result.detail}`);
@@ -1258,7 +1366,9 @@ export function BriefingScreen({
               showToast('error', `任务创建失败：${msg}`);
             }
           } else if (step.kind === 'acknowledge') {
-            const res = await ui.acknowledge(item.id);
+            const res = await runWithProgress(i, STEP_PROGRESS_MESSAGES.acknowledge, () =>
+              ui.acknowledge(item.id),
+            );
             const a = res.archive;
             if (a && a.errors.length === 0) {
               update(i, {
@@ -1278,7 +1388,9 @@ export function BriefingScreen({
             }
           } else if (step.kind === 'reply') {
             // reply 永远最后跑：生成正文 → 内联展示 → 等用户审稿后开撰写窗口
-            const res = await ui.generateReply(item.id, step.detail);
+            const res = await runWithProgress(i, STEP_PROGRESS_MESSAGES.reply, () =>
+              ui.generateReply(item.id, step.detail),
+            );
             if (res.ok && res.text) {
               setGenerated({ detail: step.detail, text: res.text });
               update(i, { state: 'done', message: '回复已生成，请检查后发送' });
@@ -1321,7 +1433,9 @@ export function BriefingScreen({
             ? {
                 ...rs,
                 results: rs.results.map((r, i) =>
-                  i === idx ? { ...r, state: 'running' as const } : r,
+                  i === idx
+                    ? { ...r, state: 'running' as const, message: '正在标记已读并归档…' }
+                    : r,
                 ),
               }
             : rs,

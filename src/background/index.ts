@@ -195,6 +195,32 @@ browser.runtime.onMessage.addListener(async (raw: unknown) => {
         };
       }
     }
+    case 'ui:extract-calendar-event': {
+      const state = await getState();
+      const item = state.briefing.find((i) => i.id === req.itemId);
+      if (!item) return { ok: false, error: 'item not found' };
+      try {
+        const event = await extractEvent({ item, actionLabel: req.actionLabel });
+        if (!event) return { ok: false, error: '无法解析出事件信息' };
+        return { ok: true, event };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+    case 'ui:commit-calendar-event': {
+      try {
+        const result = await createCalendarEvent(req.event);
+        return { ok: result.ok, result };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
     case 'ui:create-calendar-event': {
       const state = await getState();
       const item = state.briefing.find((i) => i.id === req.itemId);
@@ -204,6 +230,32 @@ browser.runtime.onMessage.addListener(async (raw: unknown) => {
         if (!event) return { ok: false, error: '无法解析出事件信息' };
         const result = await createCalendarEvent(event);
         return { ok: result.ok, result, event };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+    case 'ui:extract-task': {
+      const state = await getState();
+      const item = state.briefing.find((i) => i.id === req.itemId);
+      if (!item) return { ok: false, error: 'item not found' };
+      try {
+        const task = await extractTask({ item, actionLabel: req.actionLabel });
+        if (!task) return { ok: false, error: '无法解析出任务信息' };
+        return { ok: true, task };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+    case 'ui:commit-task': {
+      try {
+        const result = await createTask(req.task);
+        return { ok: result.ok, result };
       } catch (err) {
         return {
           ok: false,

@@ -349,6 +349,7 @@ v1 **不**做跨设备同步、不做手动备份/导出。
   - 加 `host-info` RPC + `PROTOCOL_VERSION` 元数据，扩展启动时握手，host 过旧 / 不一致就在 UI 顶端弹红/黄条 + 一键复制重装命令
   - 释出 `thunderclaw-native-host-v<v>.tar.gz` / `.zip`，Mac/Win 用户不用 git clone 整个仓库；Linux 仍优先 `.deb`
   - 堵掉"XPI 升了 host 没升 → 全部 `unknown method: llm-call` → 用户看到'今日无重要事项'但毫无提示"那个隐蔽坑
+- [x] **建议动作长耗时进度反馈**（v0.4.3）：用户点击建议回复/加日历/加任务后，进度面板显示当前真实阶段和耗时；日历/任务创建拆成"AI 提取字段"与"写入 Thunderbird"两段，避免长时间只看到"执行中…"。
 - [x] **Codex/Claude 子进程 PATH 修复**（v0.4.2）：Thunderbird 启动 native host 时 PATH 很瘦，host 能通过 fallback 找到 `/opt/homebrew/bin/codex`，但实际 `codex exec` 的 `#!/usr/bin/env node` 找不到 `node`，导致 `env: node: No such file or directory`。现在所有 CLI version/probe/llm-call 都显式补齐 Homebrew、用户级 bin 和 nvm 路径。
 - [x] **邮件预览 fallback 顺序修复**（v0.4.1）：事项关联多封邮件时，"发生了什么"优先尝试最近收到邮件，其次 reply target，再兜底全部 emailIds；某一封不可读不会让整个预览失败，"在 Thunderbird 中打开"也打开实际预览成功的那封。
 - [x] **日历直写 Thunderbird 本地日历 SQLite，零对话框**（v0.4.0）：

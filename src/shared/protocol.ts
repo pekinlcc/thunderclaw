@@ -87,7 +87,11 @@ export type UIRequest =
   | { kind: 'ui:mute-thread'; itemId: string }
   | { kind: 'ui:generate-reply'; itemId: string; actionLabel: string }
   | { kind: 'ui:open-compose'; itemId: string; replyText: string; replyAll?: boolean }
+  | { kind: 'ui:extract-calendar-event'; itemId: string; actionLabel: string }
+  | { kind: 'ui:commit-calendar-event'; event: ExtractedEvent }
   | { kind: 'ui:create-calendar-event'; itemId: string; actionLabel: string }
+  | { kind: 'ui:extract-task'; itemId: string; actionLabel: string }
+  | { kind: 'ui:commit-task'; task: ExtractedTask }
   | { kind: 'ui:create-task'; itemId: string; actionLabel: string }
   | { kind: 'ui:get-email-preview'; messageId: number }
   | { kind: 'ui:open-original'; messageId: number }

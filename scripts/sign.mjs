@@ -19,7 +19,7 @@
 //   - 拖到 Add-ons 页直接装（不用 user.js / sideload）
 //   - 能走 update_url 自动更新
 
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,16 +46,26 @@ execSync('npm run build', { cwd: ROOT, stdio: 'inherit' });
 console.log('==> 提交 Mozilla AMO 自动签');
 const artifactsDir = join(ROOT, 'dist', 'signed');
 mkdirSync(artifactsDir, { recursive: true });
-execSync(
+const signResult = spawnSync(
+  'npx',
   [
-    'npx web-ext sign',
-    `--api-key="${ISSUER}"`,
-    `--api-secret="${SECRET}"`,
+    'web-ext',
+    'sign',
+    `--api-key=${ISSUER}`,
+    `--api-secret=${SECRET}`,
     '--channel=unlisted',
-    `--source-dir="${join(ROOT, 'dist', 'extension')}"`,
-    `--artifacts-dir="${artifactsDir}"`,
+    `--source-dir=${join(ROOT, 'dist', 'extension')}`,
+    `--artifacts-dir=${artifactsDir}`,
     '--no-input',
-  ].join(' '),
+  ],
   { cwd: ROOT, stdio: 'inherit' },
 );
+if (signResult.error) {
+  console.error(`✗ web-ext sign 启动失败：${signResult.error.message}`);
+  process.exit(1);
+}
+if (signResult.status !== 0) {
+  console.error(`✗ web-ext sign 失败（exit ${signResult.status ?? 'unknown'}）`);
+  process.exit(signResult.status ?? 1);
+}
 console.log(`\n✓ 签名 XPI → ${artifactsDir}/`);

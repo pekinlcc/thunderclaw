@@ -44,6 +44,17 @@ export const ui = {
       itemId,
       actionLabel,
     }),
+  extractCalendarEvent: (itemId: string, actionLabel: string) =>
+    send<{ ok: boolean; event?: ExtractedEvent; error?: string }>({
+      kind: 'ui:extract-calendar-event',
+      itemId,
+      actionLabel,
+    }),
+  commitCalendarEvent: (event: ExtractedEvent) =>
+    send<{ ok: boolean; result?: CreateActionResult; error?: string }>({
+      kind: 'ui:commit-calendar-event',
+      event,
+    }),
   createCalendarEvent: (itemId: string, actionLabel: string) =>
     send<{
       ok: boolean;
@@ -51,6 +62,17 @@ export const ui = {
       event?: ExtractedEvent;
       error?: string;
     }>({ kind: 'ui:create-calendar-event', itemId, actionLabel }),
+  extractTask: (itemId: string, actionLabel: string) =>
+    send<{ ok: boolean; task?: ExtractedTask; error?: string }>({
+      kind: 'ui:extract-task',
+      itemId,
+      actionLabel,
+    }),
+  commitTask: (task: ExtractedTask) =>
+    send<{ ok: boolean; result?: CreateActionResult; error?: string }>({
+      kind: 'ui:commit-task',
+      task,
+    }),
   createTask: (itemId: string, actionLabel: string) =>
     send<{
       ok: boolean;
